@@ -39,8 +39,7 @@ def train(config: TrainConfig) -> LSTM:
     print(f"training on {device}: {model.num_parameters():,} parameters, {steps:,} steps")
 
     os.makedirs(os.path.dirname(config.log_path), exist_ok=True)
-    log = open(config.log_path, "w")
-    log.write("sequences,cost_bits\n")
+    log_lines = ["sequences,cost_bits"]
     costs = []
     start = time.time()
 
@@ -64,11 +63,25 @@ def train(config: TrainConfig) -> LSTM:
             sequences = step * config.batch_size
             cost = sum(costs) / len(costs)
             costs = []
-            log.write(f"{sequences},{cost:.4f}\n")
-            log.flush()
-            torch.save(model.state_dict(), config.checkpoint_path)
+            log_lines.append(f"{sequences},{cost:.4f}")
+            save_log(log_lines, config.log_path)
+            save_checkpoint(model, config.checkpoint_path)
             minutes = (time.time() - start) / 60
             print(f"sequences {sequences:>9,}  cost (bits) {cost:6.2f}  {minutes:5.1f} min")
 
-    log.close()
     return model
+
+
+# Both saves write to a temporary file and then swap it in, so anything reading these files
+# (like `plot` during training, or Google Drive syncing them) never sees a half-written file.
+
+
+def save_log(lines, path):
+    with open(path + ".tmp", "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(path + ".tmp", path)
+
+
+def save_checkpoint(model, path):
+    torch.save(model.state_dict(), path + ".tmp")
+    os.replace(path + ".tmp", path)
