@@ -52,6 +52,9 @@ def main():
         config.learning_rate = args.learning_rate
         train(config)
     elif args.command == "plot":
+        if not os.path.exists(config.checkpoint_path):
+            print(f"Nothing to plot yet: {config.checkpoint_path} is written after the first {config.log_every:,} sequences.")
+            return
         # Figures go in figures/ (committed, shown in the README); logs and models stay in results/
         os.makedirs("figures", exist_ok=True)
         plot_learning_curve(config.log_path, "figures/copy_learning_curve.png")
