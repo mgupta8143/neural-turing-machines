@@ -22,8 +22,13 @@ def copy_batch(batch_size: int, min_len: int = 1, max_len: int = 20):
     """Returns x: (batch, 2L + 1, 9) and target: (batch, L, 8), with L drawn from [min_len, max_len]."""
     length = random.randint(min_len, max_len)
     target = torch.randint(0, 2, (batch_size, length, BITS)).float()
+    return make_input(target), target
 
+
+def make_input(target):
+    """Builds the model input for target vectors of shape (batch, L, 8): the vectors, a delimiter, then blanks."""
+    batch_size, length, _ = target.shape
     x = torch.zeros(batch_size, 2 * length + 1, INPUT_SIZE)
     x[:, :length, :BITS] = target  # the vectors to remember
     x[:, length, BITS] = 1.0  # the delimiter: "now repeat them"
-    return x, target
+    return x

@@ -3,6 +3,8 @@
     uv run main.py demo     run one batch through the untrained model and print the shapes
     uv run main.py train    train the LSTM (options: --sequences, --batch-size, --learning-rate)
     uv run main.py plot     draw Figures 3 and 5 from the saved log and model into figures/
+    uv run main.py try 10110010 01100101 ...   copy your own 8-bit vectors with the trained model
+    uv run main.py try --random 30             or a random sequence of that length
 """
 
 import argparse
@@ -14,6 +16,7 @@ from src.models.lstm import LSTM
 from src.tasks.copy.data import copy_batch
 from src.tasks.copy.plots import plot_generalisation, plot_learning_curve
 from src.tasks.copy.train import TrainConfig, train
+from src.tasks.copy.try_it import parse_vectors, try_sequence
 
 
 def demo():
@@ -40,6 +43,9 @@ def main():
     train_parser.add_argument("--batch-size", type=int, default=TrainConfig.batch_size)
     train_parser.add_argument("--learning-rate", type=float, default=TrainConfig.learning_rate)
     commands.add_parser("plot")
+    try_parser = commands.add_parser("try")
+    try_parser.add_argument("vectors", nargs="*", help="8-bit vectors like 10110010")
+    try_parser.add_argument("--random", type=int, help="use a random sequence of this length instead")
     args = parser.parse_args()
 
     config = TrainConfig()
@@ -51,10 +57,19 @@ def main():
         config.batch_size = args.batch_size
         config.learning_rate = args.learning_rate
         train(config)
+    elif not os.path.exists(config.checkpoint_path):
+        print(f"Nothing saved yet: {config.checkpoint_path} is written after the first {config.log_every:,} sequences.")
+    elif args.command == "try":
+        if args.random:
+            target = torch.randint(0, 2, (1, args.random, 8)).float()
+        elif args.vectors:
+            target = parse_vectors(args.vectors)
+        else:
+            raise SystemExit("Give some 8-bit vectors (e.g. 10110010 01100101) or --random LENGTH")
+        os.makedirs("figures", exist_ok=True)
+        try_sequence(config.checkpoint_path, target, "figures/copy_try.png")
+        print("saved figures/copy_try.png")
     elif args.command == "plot":
-        if not os.path.exists(config.checkpoint_path):
-            print(f"Nothing to plot yet: {config.checkpoint_path} is written after the first {config.log_every:,} sequences.")
-            return
         # Figures go in figures/ (committed, shown in the README); logs and models stay in results/
         os.makedirs("figures", exist_ok=True)
         plot_learning_curve(config.log_path, "figures/copy_learning_curve.png")

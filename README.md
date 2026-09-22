@@ -44,6 +44,10 @@ uv run main.py train --sequences 50000 --batch-size 16 --learning-rate 1e-4   # 
 
 # Draw the learning curve (Figure 3) and generalisation plot (Figure 5) into figures/
 uv run main.py plot
+
+# Give the trained model your own 8-bit vectors, or a random sequence, and see what it copies back
+uv run main.py try 10110010 01100101 11110000
+uv run main.py try --random 30
 ```
 
 ### On Google Colab (GPU)
@@ -76,6 +80,7 @@ src/models/lstm.py         LSTM baseline: nn.LSTM (3 × 256) + linear readout to
 src/tasks/copy/data.py     copy_batch() -> x (B, 2L+1, 9), target (B, L, 8)
 src/tasks/copy/train.py    training loop; the paper's settings live in TrainConfig
 src/tasks/copy/plots.py    Figure 3 (learning curve) and Figure 5 (generalisation)
+src/tasks/copy/try_it.py   run the trained model on a sequence you type in
 figures/                   saved plots shown in this README
 results/                   training logs and model checkpoints (not committed)
 ```

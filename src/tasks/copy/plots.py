@@ -14,28 +14,44 @@ from src.models.lstm import LSTM
 from src.tasks.copy.data import copy_batch
 
 
-def plot_learning_curve(log_path: str, out_path: str):
+def load_model(checkpoint_path: str) -> LSTM:
+    model = LSTM()
+    model.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
+    model.eval()
+    return model
+
+
+def plot_learning_curve(log_path: str, out_path: str, chunk: int = 10_000):
     with open(log_path) as f:
         rows = list(csv.DictReader(f))
-    thousands = [int(row["sequences"]) / 1000 for row in rows]
-    cost = [float(row["cost_bits"]) for row in rows]
 
-    fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot(thousands, cost, "o-", color="#1f3f99", markersize=3, linewidth=1, label="LSTM")
-    ax.set_xlim(0, max(1000, thousands[-1]))
-    ax.set_ylim(0, 10)  # same scale as the paper
-    ax.set_xlabel("sequence number (thousands)")
-    ax.set_ylabel("cost per sequence (bits)")
-    ax.legend(frameon=False)
+    # Average the log into chunks of 10k sequences, like the spacing of the paper's dots.
+    # Single log lines are noisy because every batch has random sequence lengths.
+    chunks = {}
+    for row in rows:
+        end = -(-int(row["sequences"]) // chunk) * chunk  # round up to the chunk boundary
+        chunks.setdefault(end, []).append(float(row["cost_bits"]))
+    thousands = [end / 1000 for end in chunks]
+    cost = [sum(values) / len(values) for values in chunks.values()]
+
+    fig, (full, paper) = plt.subplots(1, 2, figsize=(12, 4))
+    for ax in (full, paper):
+        ax.plot(thousands, cost, "o-", color="#1f3f99", markersize=3, linewidth=1, label="LSTM")
+        ax.set_xlim(0, max(1000, thousands[-1]))
+        ax.set_xlabel("sequence number (thousands)")
+        ax.set_ylabel("cost per sequence (bits)")
+        ax.legend(frameon=False)
+    full.set_ylim(0, max(cost) * 1.05)
+    full.set_title("Whole run")
+    paper.set_ylim(0, 10)
+    paper.set_title("Same scale as the paper's Figure 3")
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
 
 
 def plot_generalisation(checkpoint_path: str, out_path: str):
-    model = LSTM()
-    model.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
-    model.eval()
+    model = load_model(checkpoint_path)
 
     # The page is a grid with one column per timestep, so each panel's width matches its length.
     # Top: lengths 10, 20, 30, 50 side by side. Bottom: length 120 across the whole width.
