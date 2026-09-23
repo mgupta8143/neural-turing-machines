@@ -2,6 +2,9 @@
 
 Memory is a tensor of shape (batch, locations, width). It is state, not weights: the model
 carries it from one timestep to the next, so it is passed in and handed back.
+
+Addressing is the paper's Figure 2, one function per stage. Every stage takes a weighting of
+shape (batch, locations) and returns another one, non-negative and summing to 1.
 """
 
 import torch
@@ -22,24 +25,47 @@ def write(memory, w, erase, add):
     return memory + w * add.unsqueeze(1)
 
 
-def address(memory, previous_w, key, strength, gate, shift_weights, sharpness):
-    """Figure 2 of the paper: the four stages that turn a head's outputs into a weighting.
+def content_weighting(memory, key, strength):
+    """Stage 1, equations 5 and 6: attend to locations that look like the key.
 
-    Returns (B, N), non-negative and summing to 1: how much the head attends to each location.
+    Strength turns the cosine similarities into a weighting that can be flat (strength 0) or
+    concentrated on the single best match (large strength).
     """
-    # 1. Content: how much does each location look like the key? (equations 5 and 6)
-    similarity = F.cosine_similarity(memory, key.unsqueeze(1), dim=-1, eps=EPS)
-    w = F.softmax(strength * similarity, dim=1)
+    similarity = F.cosine_similarity(memory, key.unsqueeze(1), dim=-1, eps=EPS)  # (B, N)
+    return F.softmax(strength * similarity, dim=1)
 
-    # 2. Interpolate: gate 1 uses that, gate 0 keeps the head where it was last step (equation 7)
-    w = gate * w + (1 - gate) * previous_w
 
-    # 3. Shift: circular convolution, moving attention to neighbouring locations (equation 8)
-    pad = shift_weights.shape[1] // 2
-    padded = torch.cat([w[:, -pad:], w, w[:, :pad]], dim=1)  # wrap around both ends
-    windows = padded.unfold(dimension=1, size=shift_weights.shape[1], step=1)  # (B, N, shifts)
-    w = (windows * shift_weights.flip(-1).unsqueeze(1)).sum(dim=-1)
+def interpolate(content_w, previous_w, gate):
+    """Stage 2, equation 7: gate 1 takes the content weighting, gate 0 stays where the head was."""
+    return gate * content_w + (1 - gate) * previous_w
 
-    # 4. Sharpen: a power above 1 makes the weighting peakier again (equation 9)
-    w = w.clamp(min=EPS) ** sharpness
-    return w / (w.sum(dim=1, keepdim=True) + EPS)
+
+def shift(w, shift_weights):
+    """Stage 3, equation 8: a circular convolution that rotates attention to nearby locations.
+
+    shift_weights is a distribution over the allowed moves, e.g. (-1, 0, +1) for three of them,
+    and the rotation wraps around the ends of the memory.
+    """
+    span = shift_weights.shape[1]
+    pad = span // 2
+    padded = torch.cat([w[:, -pad:], w, w[:, :pad]], dim=1)  # wrap both ends
+    windows = padded.unfold(dimension=1, size=span, step=1)  # (B, N, span): each location's neighbourhood
+    return (windows * shift_weights.flip(-1).unsqueeze(1)).sum(dim=-1)
+
+
+def sharpen(w, sharpness):
+    """Stage 4, equation 9: a power of at least 1 makes the weighting peakier, undoing shift blur.
+
+    w ** sharpness, renormalised, is the same as softmax(sharpness * log w), and the softmax
+    form is what we use: raising small weights to a high power underflows to zero in float32,
+    which would leave the head attending to nothing at all.
+    """
+    return F.softmax(sharpness * w.clamp(min=EPS).log(), dim=1)
+
+
+def address(memory, previous_w, key, strength, gate, shift_weights, sharpness):
+    """All four stages in order: what a head attends to this timestep."""
+    w = content_weighting(memory, key, strength)
+    w = interpolate(w, previous_w, gate)
+    w = shift(w, shift_weights)
+    return sharpen(w, sharpness)
