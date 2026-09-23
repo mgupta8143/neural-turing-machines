@@ -51,7 +51,9 @@ class NTM(nn.Module):
         reads = [r.unsqueeze(0).expand(batch_size, -1) for r in self.initial_reads]
         return memory, weightings, reads, self.controller.initial_state(batch_size)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, trace: dict | None = None) -> torch.Tensor:
+        """Pass `trace` as an empty dict to also collect what the heads did at each timestep,
+        which is what the memory-use figure (the paper's Figure 6) is drawn from."""
         batch_size, timesteps, _ = x.shape
         memory, weightings, reads, controller_state = self.initial_state(batch_size)
         heads = list(self.write_heads) + list(self.read_heads)  # weightings are stored in this order
@@ -62,12 +64,18 @@ class NTM(nn.Module):
 
             # Write first, so the read heads see the memory as it was just written
             for i, head in enumerate(self.write_heads):
-                memory, weightings[i] = head(h, weightings[i], memory)
+                memory, weightings[i], added = head(h, weightings[i], memory)
+                if trace is not None:
+                    trace.setdefault("write_weightings", []).append(weightings[i][0].detach())
+                    trace.setdefault("adds", []).append(added[0].detach())
 
             reads = []
             for j, head in enumerate(self.read_heads, start=len(self.write_heads)):
                 r, weightings[j] = head(h, weightings[j], memory)
                 reads.append(r)
+                if trace is not None:
+                    trace.setdefault("read_weightings", []).append(weightings[j][0].detach())
+                    trace.setdefault("reads", []).append(r[0].detach())
 
             outputs.append(self.output(torch.cat([h, *reads], dim=1)))
 

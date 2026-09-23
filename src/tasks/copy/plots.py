@@ -84,3 +84,49 @@ def plot_generalisation(model_name: str, checkpoint_path: str, out_path: str):
     fig.text(0.13, 0.03, "Time  ⟶", fontsize=12)
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
+
+
+def plot_memory_use(model_name: str, checkpoint_path: str, out_path: str, length: int = 20):
+    """Figure 6 of the paper: what the heads did, timestep by timestep.
+
+    Left column: the input, the vectors written to memory, and the write weightings.
+    Right column: the output, the vectors read back, and the read weightings.
+    A network that has learned to copy shows a diagonal stripe in both weightings: the write head
+    steps along memory while reading the input, and the read head retraces the same locations.
+    """
+    model = load_model(model_name, checkpoint_path)
+    x, _ = copy_batch(1, length, length)
+    trace = {}
+    with torch.no_grad():
+        outputs = torch.sigmoid(model(x, trace=trace)[0])
+
+    write_w = torch.stack(trace["write_weightings"], dim=1)  # (locations, timesteps)
+    read_w = torch.stack(trace["read_weightings"], dim=1)
+    adds = torch.stack(trace["adds"], dim=1)  # (memory width, timesteps)
+    reads = torch.stack(trace["reads"], dim=1)
+
+    # Show only the locations the heads actually used, as the paper does
+    used = (write_w.max(dim=1).values + read_w.max(dim=1).values) > 0.01
+    rows = used.nonzero().flatten()
+    window = slice(max(0, int(rows.min()) - 2), int(rows.max()) + 3) if len(rows) else slice(0, 40)
+
+    fig, axes = plt.subplots(3, 2, figsize=(11, 7), gridspec_kw={"height_ratios": [1, 1.3, 2.6]})
+    panels = [
+        ("Inputs", x[0].T, "gray", axes[0, 0]),
+        ("Outputs", outputs.T, "gray", axes[0, 1]),
+        ("Adds", adds, "jet", axes[1, 0]),
+        ("Reads", reads, "jet", axes[1, 1]),
+        ("Write weightings", write_w[window], "gray", axes[2, 0]),
+        ("Read weightings", read_w[window], "gray", axes[2, 1]),
+    ]
+    for title, image, cmap, ax in panels:
+        ax.imshow(image, cmap=cmap, aspect="auto", interpolation="nearest", vmin=0, vmax=1)
+        ax.set_title(title, fontsize=10)
+        ax.set_xticks([])
+        ax.set_yticks([])
+    axes[2, 0].set_ylabel("Location")
+    axes[2, 0].set_xlabel("Time →")
+    axes[2, 1].set_xlabel("Time →")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)

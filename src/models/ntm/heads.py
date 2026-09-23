@@ -47,6 +47,6 @@ class WriteHead(Head):
         super().__init__(controller_size, memory_width, shift_range, extra=2)  # erase and add
 
     def forward(self, h, previous_w, memory):
-        """Returns the updated memory and the weighting it used."""
+        """Returns the updated memory, the weighting it used, and the vector it added."""
         w, (erase, add) = self.weighting(h, previous_w, memory)
-        return write(memory, w, torch.sigmoid(erase), add), w
+        return write(memory, w, torch.sigmoid(erase), add), w, add

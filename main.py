@@ -5,6 +5,7 @@
     uv run main.py plot --model ntm-ff         draw Figures 3 and 5 into figures/
     uv run main.py try 10110010 01100101 ...   copy your own 8-bit vectors
     uv run main.py try --random 30             or a random sequence of that length
+    uv run main.py memory --model ntm-ff       the paper's Figure 6: what the heads read and wrote
 """
 
 import argparse
@@ -14,7 +15,7 @@ import torch
 
 from src.models.build import LEARNING_RATES, MODELS, build_model
 from src.tasks.copy.data import copy_batch
-from src.tasks.copy.plots import plot_generalisation, plot_learning_curve
+from src.tasks.copy.plots import plot_generalisation, plot_learning_curve, plot_memory_use
 from src.tasks.copy.train import TrainConfig, train
 from src.tasks.copy.try_it import parse_vectors, try_sequence
 
@@ -39,7 +40,7 @@ def demo(model_name):
 def main():
     parser = argparse.ArgumentParser(description="NTM and LSTM on the copy task")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ["demo", "train", "plot", "try"]:
+    for name in ["demo", "train", "plot", "try", "memory"]:
         command = commands.add_parser(name)
         command.add_argument("--model", choices=list(MODELS), default="lstm")
     commands.choices["train"].add_argument("--sequences", type=int, default=TrainConfig.total_sequences)
@@ -49,6 +50,7 @@ def main():
     commands.choices["train"].add_argument("--compile", action="store_true", help="torch.compile: ~1.7x per step after a slow warmup")
     commands.choices["try"].add_argument("vectors", nargs="*", help="8-bit vectors like 10110010")
     commands.choices["try"].add_argument("--random", type=int, help="use a random sequence of this length")
+    commands.choices["memory"].add_argument("--length", type=int, default=20, help="sequence length to trace")
     args = parser.parse_args()
 
     config = TrainConfig(model=args.model)
@@ -76,6 +78,11 @@ def main():
         plot_learning_curve(config.log_path, f"figures/{args.model}_learning_curve.png", label=args.model)
         plot_generalisation(args.model, config.checkpoint_path, f"figures/{args.model}_generalisation.png")
         print(f"saved figures/{args.model}_learning_curve.png and figures/{args.model}_generalisation.png")
+    elif args.command == "memory":
+        if not args.model.startswith("ntm"):
+            raise SystemExit("memory plots need an NTM: --model ntm-ff or ntm-lstm")
+        plot_memory_use(args.model, config.checkpoint_path, f"figures/{args.model}_memory.png", args.length)
+        print(f"saved figures/{args.model}_memory.png")
     elif args.command == "try":
         if args.random:
             target = torch.randint(0, 2, (1, args.random, 8)).float()

@@ -63,8 +63,9 @@ learning rate 3e-5). That takes about 6.5 hours on a T4.
 
 ## NTM, feed-forward controller
 
-Not run yet. `uv run main.py train --model ntm-ff` writes `figures/ntm-ff_learning_curve.png` and
-`figures/ntm-ff_generalisation.png`.
+Not run yet. `uv run main.py train --model ntm-ff` writes `figures/ntm-ff_learning_curve.png`
+and `figures/ntm-ff_generalisation.png`; `uv run main.py memory --model ntm-ff` writes
+`figures/ntm-ff_memory.png`, the paper's Figure 6.
 
 ## NTM, LSTM controller
 

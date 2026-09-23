@@ -62,6 +62,9 @@ uv run main.py train --model ntm-ff --device cpu --compile                # NTM 
 # Draw the learning curve (Figure 3) and generalisation plot (Figure 5) into figures/
 uv run main.py plot --model ntm-ff
 
+# The paper's Figure 6: the write and read weightings over time (NTM only)
+uv run main.py memory --model ntm-ff --length 20
+
 # Give a trained model your own 8-bit vectors, or a random sequence, and see what it copies back
 uv run main.py try --model ntm-ff 10110010 01100101 11110000
 uv run main.py try --model ntm-ff --random 30
@@ -87,7 +90,7 @@ fails past length 20 the way the paper's does. NTM runs are in progress.
 ## Layout
 
 ```
-main.py                    command line: demo / train / plot
+main.py                    command line: demo / train / plot / memory / try
 colab.ipynb                run training and plots on a Colab GPU
 src/models/lstm.py         LSTM baseline: nn.LSTM (3 × 256) + linear readout to 8 bits
 src/models/build.py        model names -> models, and the paper's learning rate for each
