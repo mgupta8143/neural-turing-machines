@@ -63,7 +63,7 @@ uv run main.py train --model ntm-ff --device cpu --compile                # NTM 
 uv run main.py plot --model ntm-ff
 
 # The paper's Figure 6: the write and read weightings over time (NTM only)
-uv run main.py memory --model ntm-ff --length 20
+uv run main.py memory --model ntm-ff --length 20   # figures/ntm-ff_memory_length20.png
 
 # Give a trained model your own 8-bit vectors, or a random sequence, and see what it copies back
 uv run main.py try --model ntm-ff 10110010 01100101 11110000

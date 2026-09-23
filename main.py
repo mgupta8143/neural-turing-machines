@@ -81,8 +81,9 @@ def main():
     elif args.command == "memory":
         if not args.model.startswith("ntm"):
             raise SystemExit("memory plots need an NTM: --model ntm-ff or ntm-lstm")
-        plot_memory_use(args.model, config.checkpoint_path, f"figures/{args.model}_memory.png", args.length)
-        print(f"saved figures/{args.model}_memory.png")
+        out = f"figures/{args.model}_memory_length{args.length}.png"
+        plot_memory_use(args.model, config.checkpoint_path, out, args.length)
+        print(f"saved {out}")
     elif args.command == "try":
         if args.random:
             target = torch.randint(0, 2, (1, args.random, 8)).float()
