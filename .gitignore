@@ -11,3 +11,7 @@ wheels/
 
 # Training outputs
 results/
+
+# Training logs
+train_*.log
+overnight.log
