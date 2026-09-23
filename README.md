@@ -39,7 +39,10 @@ that destroys what the model has learned. The LSTM baseline keeps the paper's va
 
 Common settings from the paper (Section 4.6 and Tables 1-3): RMSProp with momentum 0.9,
 gradients clipped elementwise to (-10, 10), cross-entropy reported in bits per sequence, and a
-learning rate of 3e-5 for the LSTM baseline or 1e-4 for the NTMs. The NTMs use a 128 x 20
+learning rate of 3e-5 for the LSTM baseline or 1e-4 for the NTMs. The exception is `ntm-lstm`,
+which defaults to 1e-3: the paper's rates assume one sequence per update, and with batch 16 the
+recurrent controller does not learn at 1e-4. Pass `--learning-rate 1e-4 --batch-size 1` for the
+paper's exact setup. The NTMs use a 128 x 20
 memory, a controller of 100 units, and one read and one write head.
 
 ## Usage
