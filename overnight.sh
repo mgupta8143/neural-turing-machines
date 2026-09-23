@@ -12,12 +12,13 @@ SEQUENCES=${SEQUENCES:-1000000}   # per model
 REFRESH=${REFRESH:-900}           # seconds between figure refreshes
 DRIVE=${DRIVE:-/content/drive/MyDrive/ntm-results}
 
-echo "$(date '+%H:%M') starting ntm-ff (CPU, batch 16) and lstm (GPU, the paper's batch 1)"
+echo "$(date '+%H:%M') starting ntm-ff and ntm-lstm (CPU, batch 16) and lstm (GPU, the paper's batch 1)"
 python -u main.py train --model ntm-ff --batch-size 16 --sequences "$SEQUENCES" > train_ntm-ff.log 2>&1 &
+python -u main.py train --model ntm-lstm --batch-size 16 --sequences "$SEQUENCES" > train_ntm-lstm.log 2>&1 &
 python -u main.py train --model lstm --sequences "$SEQUENCES" > train_lstm.log 2>&1 &
 
 refresh_figures() {
-  for model in ntm-ff lstm; do
+  for model in ntm-ff ntm-lstm lstm; do
     [ -f "results/copy/$model/model.pt" ] || continue
     python main.py plot --model "$model" > /dev/null 2>&1
     if [ "${model#ntm}" != "$model" ]; then     # memory figures are NTM only
