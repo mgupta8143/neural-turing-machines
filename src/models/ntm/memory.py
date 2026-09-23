@@ -14,8 +14,12 @@ EPS = 1e-8
 
 
 def read(memory, w):
-    """Weighted average of the memory locations. (B, N, M) and (B, N) -> (B, M)."""
-    return (w.unsqueeze(-1) * memory).sum(dim=1)
+    """Weighted average of the memory locations. (B, N, M) and (B, N) -> (B, M).
+
+    Written as a batched matrix multiply rather than multiply-then-sum: one kernel instead of two,
+    which matters because this runs once per head per timestep.
+    """
+    return torch.bmm(w.unsqueeze(1), memory).squeeze(1)
 
 
 def write(memory, w, erase, add):

@@ -45,6 +45,8 @@ def main():
     commands.choices["train"].add_argument("--sequences", type=int, default=TrainConfig.total_sequences)
     commands.choices["train"].add_argument("--batch-size", type=int, default=TrainConfig.batch_size)
     commands.choices["train"].add_argument("--learning-rate", type=float)
+    commands.choices["train"].add_argument("--device", choices=["cpu", "cuda"], default="")
+    commands.choices["train"].add_argument("--compile", action="store_true", help="torch.compile: ~1.7x per step after a slow warmup")
     commands.choices["try"].add_argument("vectors", nargs="*", help="8-bit vectors like 10110010")
     commands.choices["try"].add_argument("--random", type=int, help="use a random sequence of this length")
     args = parser.parse_args()
@@ -60,6 +62,8 @@ def main():
         config.total_sequences = args.sequences
         config.batch_size = args.batch_size
         config.learning_rate = args.learning_rate or LEARNING_RATES[args.model]
+        config.device = args.device
+        config.compile = args.compile
         train(config)
         return
 

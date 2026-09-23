@@ -24,6 +24,19 @@ output the same sequence from memory while receiving no further input.
 All three share the copy task, the training loop and the plots, and take
 `(batch, 2L+1, 9)` to `(batch, 2L+1, 8)`.
 
+### Speed and stability notes for the NTM
+
+The NTM runs a Python loop over timesteps with many small operations per step, so a GPU spends
+its time launching kernels rather than computing: on the copy task it is several times slower
+than a CPU. Training therefore defaults to the CPU for `ntm-ff` and `ntm-lstm`, and to the GPU
+for the LSTM baseline, whose whole sequence runs in one cuDNN kernel. Override with `--device`.
+`--compile` gives about 1.7x per step, after a warmup that recompiles for each sequence length.
+
+The NTM also clips gradients by norm rather than by value. The paper clips each component to
+(-10, 10), which bounds each number but not the size of the update: NTM gradient norms spike to
+several hundred times their median, and with value clipping those spikes produce an enormous step
+that destroys what the model has learned. The LSTM baseline keeps the paper's value clipping.
+
 Common settings from the paper (Section 4.6 and Tables 1-3): RMSProp with momentum 0.9,
 gradients clipped elementwise to (-10, 10), cross-entropy reported in bits per sequence, and a
 learning rate of 3e-5 for the LSTM baseline or 1e-4 for the NTMs. The NTMs use a 128 x 20
@@ -44,6 +57,7 @@ uv run main.py train --model lstm       # the 3 x 256 LSTM baseline
 uv run main.py train --model ntm-ff     # NTM, feed-forward controller
 uv run main.py train --model ntm-lstm   # NTM, LSTM controller
 uv run main.py train --model ntm-ff --sequences 50000 --batch-size 16   # quicker run
+uv run main.py train --model ntm-ff --device cpu --compile                # NTM speed options
 
 # Draw the learning curve (Figure 3) and generalisation plot (Figure 5) into figures/
 uv run main.py plot --model ntm-ff
