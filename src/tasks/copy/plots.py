@@ -21,12 +21,16 @@ def load_model(model_name: str, checkpoint_path: str):
     return model
 
 
-def plot_learning_curve(log_path: str, out_path: str, label: str = "LSTM", chunk: int = 10_000):
+def plot_learning_curve(log_path: str, out_path: str, label: str = "LSTM", chunk: int = 0):
     with open(log_path) as f:
         rows = list(csv.DictReader(f))
 
-    # Average the log into chunks of 10k sequences, like the spacing of the paper's dots.
-    # Single log lines are noisy because every batch has random sequence lengths.
+    # Average the log into chunks, since single log lines are noisy: every batch draws a random
+    # sequence length, and longer sequences cost more bits. The paper's dots are about 10k
+    # sequences apart, but a chunk that size hides everything in a short run, so aim for ~50
+    # points and cap it at 10k.
+    if not chunk:
+        chunk = min(10_000, max(1_000, int(rows[-1]["sequences"]) // 50))
     chunks = {}
     for row in rows:
         end = -(-int(row["sequences"]) // chunk) * chunk  # round up to the chunk boundary
