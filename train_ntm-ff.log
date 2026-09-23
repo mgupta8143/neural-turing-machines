@@ -1,0 +1,2 @@
+training ntm-ff on cpu: 16,096 parameters, 100 steps
+sequences       992  cost (bits)  96.45    0.2 min

@@ -69,6 +69,9 @@ uv run main.py memory --model ntm-ff --length 20
 uv run main.py try --model ntm-ff 10110010 01100101 11110000
 uv run main.py try --model ntm-ff --random 30
 
+# Train both models and keep every figure refreshed; safe to leave running overnight
+bash overnight.sh
+
 # Checks for the NTM's memory, addressing and gradients
 uv run pytest
 ```

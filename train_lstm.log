@@ -1,0 +1,2 @@
+training lstm on cpu: 1,328,136 parameters, 1,600 steps
+sequences     1,000  cost (bits)  83.88    0.4 min
