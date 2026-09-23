@@ -1,9 +1,9 @@
 """Command line for the copy task.
 
-    uv run main.py demo     run one batch through the untrained model and print the shapes
-    uv run main.py train    train the LSTM (options: --sequences, --batch-size, --learning-rate)
-    uv run main.py plot     draw Figures 3 and 5 from the saved log and model into figures/
-    uv run main.py try 10110010 01100101 ...   copy your own 8-bit vectors with the trained model
+    uv run main.py demo                        run one batch through an untrained model
+    uv run main.py train --model ntm-ff        train (also: lstm, ntm-lstm)
+    uv run main.py plot --model ntm-ff         draw Figures 3 and 5 into figures/
+    uv run main.py try 10110010 01100101 ...   copy your own 8-bit vectors
     uv run main.py try --random 30             or a random sequence of that length
 """
 
@@ -12,19 +12,21 @@ import os
 
 import torch
 
-from src.models.lstm import LSTM
+from src.models.build import LEARNING_RATES, MODELS, build_model
 from src.tasks.copy.data import copy_batch
 from src.tasks.copy.plots import plot_generalisation, plot_learning_curve
 from src.tasks.copy.train import TrainConfig, train
 from src.tasks.copy.try_it import parse_vectors, try_sequence
 
 
-def demo():
+def demo(model_name):
     x, target = copy_batch(batch_size=2, min_len=3, max_len=3)
     print("input x:", tuple(x.shape), "= (batch, 2L + 1 timesteps, 8 bits + delimiter)")
     print(x[0].int())
 
-    logits = LSTM()(x)
+    model = build_model(model_name)
+    print(f"{model_name}: {model.num_parameters():,} parameters")
+    logits = model(x)
     print("output logits:", tuple(logits.shape), "= (batch, timesteps, 8 bits)")
 
     length = target.shape[1]
@@ -35,30 +37,41 @@ def demo():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="LSTM baseline on the NTM copy task")
+    parser = argparse.ArgumentParser(description="NTM and LSTM on the copy task")
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("demo")
-    train_parser = commands.add_parser("train")
-    train_parser.add_argument("--sequences", type=int, default=TrainConfig.total_sequences)
-    train_parser.add_argument("--batch-size", type=int, default=TrainConfig.batch_size)
-    train_parser.add_argument("--learning-rate", type=float, default=TrainConfig.learning_rate)
-    commands.add_parser("plot")
-    try_parser = commands.add_parser("try")
-    try_parser.add_argument("vectors", nargs="*", help="8-bit vectors like 10110010")
-    try_parser.add_argument("--random", type=int, help="use a random sequence of this length instead")
+    for name in ["demo", "train", "plot", "try"]:
+        command = commands.add_parser(name)
+        command.add_argument("--model", choices=list(MODELS), default="lstm")
+    commands.choices["train"].add_argument("--sequences", type=int, default=TrainConfig.total_sequences)
+    commands.choices["train"].add_argument("--batch-size", type=int, default=TrainConfig.batch_size)
+    commands.choices["train"].add_argument("--learning-rate", type=float)
+    commands.choices["try"].add_argument("vectors", nargs="*", help="8-bit vectors like 10110010")
+    commands.choices["try"].add_argument("--random", type=int, help="use a random sequence of this length")
     args = parser.parse_args()
 
-    config = TrainConfig()
+    config = TrainConfig(model=args.model)
+
     if args.command == "demo":
         torch.manual_seed(0)
-        demo()
-    elif args.command == "train":
+        demo(args.model)
+        return
+
+    if args.command == "train":
         config.total_sequences = args.sequences
         config.batch_size = args.batch_size
-        config.learning_rate = args.learning_rate
+        config.learning_rate = args.learning_rate or LEARNING_RATES[args.model]
         train(config)
-    elif not os.path.exists(config.checkpoint_path):
-        print(f"Nothing saved yet: {config.checkpoint_path} is written after the first {config.log_every:,} sequences.")
+        return
+
+    if not os.path.exists(config.checkpoint_path):
+        print(f"Nothing saved yet: train {args.model} first, or wait for its first {config.log_every:,} sequences.")
+        return
+
+    os.makedirs("figures", exist_ok=True)
+    if args.command == "plot":
+        plot_learning_curve(config.log_path, f"figures/{args.model}_learning_curve.png", label=args.model)
+        plot_generalisation(args.model, config.checkpoint_path, f"figures/{args.model}_generalisation.png")
+        print(f"saved figures/{args.model}_learning_curve.png and figures/{args.model}_generalisation.png")
     elif args.command == "try":
         if args.random:
             target = torch.randint(0, 2, (1, args.random, 8)).float()
@@ -66,15 +79,8 @@ def main():
             target = parse_vectors(args.vectors)
         else:
             raise SystemExit("Give some 8-bit vectors (e.g. 10110010 01100101) or --random LENGTH")
-        os.makedirs("figures", exist_ok=True)
-        try_sequence(config.checkpoint_path, target, "figures/copy_try.png")
-        print("saved figures/copy_try.png")
-    elif args.command == "plot":
-        # Figures go in figures/ (committed, shown in the README); logs and models stay in results/
-        os.makedirs("figures", exist_ok=True)
-        plot_learning_curve(config.log_path, "figures/copy_learning_curve.png")
-        plot_generalisation(config.checkpoint_path, "figures/copy_generalisation.png")
-        print("saved figures/copy_learning_curve.png and figures/copy_generalisation.png")
+        try_sequence(args.model, config.checkpoint_path, target, f"figures/{args.model}_try.png")
+        print(f"saved figures/{args.model}_try.png")
 
 
 if __name__ == "__main__":

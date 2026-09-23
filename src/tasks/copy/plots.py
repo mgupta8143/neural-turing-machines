@@ -10,18 +10,18 @@ import matplotlib.pyplot as plt
 import torch
 from matplotlib.gridspec import GridSpec
 
-from src.models.lstm import LSTM
+from src.models.build import build_model
 from src.tasks.copy.data import copy_batch
 
 
-def load_model(checkpoint_path: str) -> LSTM:
-    model = LSTM()
+def load_model(model_name: str, checkpoint_path: str):
+    model = build_model(model_name)
     model.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
     model.eval()
     return model
 
 
-def plot_learning_curve(log_path: str, out_path: str, chunk: int = 10_000):
+def plot_learning_curve(log_path: str, out_path: str, label: str = "LSTM", chunk: int = 10_000):
     with open(log_path) as f:
         rows = list(csv.DictReader(f))
 
@@ -36,7 +36,7 @@ def plot_learning_curve(log_path: str, out_path: str, chunk: int = 10_000):
 
     fig, (full, paper) = plt.subplots(1, 2, figsize=(12, 4))
     for ax in (full, paper):
-        ax.plot(thousands, cost, "o-", color="#1f3f99", markersize=3, linewidth=1, label="LSTM")
+        ax.plot(thousands, cost, "o-", color="#1f3f99", markersize=3, linewidth=1, label=label)
         ax.set_xlim(0, max(1000, thousands[-1]))
         ax.set_xlabel("sequence number (thousands)")
         ax.set_ylabel("cost per sequence (bits)")
@@ -50,8 +50,8 @@ def plot_learning_curve(log_path: str, out_path: str, chunk: int = 10_000):
     plt.close(fig)
 
 
-def plot_generalisation(checkpoint_path: str, out_path: str):
-    model = load_model(checkpoint_path)
+def plot_generalisation(model_name: str, checkpoint_path: str, out_path: str):
+    model = load_model(model_name, checkpoint_path)
 
     # The page is a grid with one column per timestep, so each panel's width matches its length.
     # Top: lengths 10, 20, 30, 50 side by side. Bottom: length 120 across the whole width.

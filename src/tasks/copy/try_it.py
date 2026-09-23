@@ -15,8 +15,8 @@ def parse_vectors(vectors: list[str]) -> torch.Tensor:
     return torch.tensor([[[int(bit) for bit in v] for v in vectors]]).float()
 
 
-def try_sequence(checkpoint_path: str, target: torch.Tensor, out_path: str):
-    model = load_model(checkpoint_path)
+def try_sequence(model_name: str, checkpoint_path: str, target: torch.Tensor, out_path: str):
+    model = load_model(model_name, checkpoint_path)
     length = target.shape[1]
     x = make_input(target)
     with torch.no_grad():

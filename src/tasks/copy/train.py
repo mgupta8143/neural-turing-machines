@@ -8,35 +8,42 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 
-from src.models.lstm import LSTM
+from src.models.build import build_model
 from src.tasks.copy.data import copy_batch
 
 
 @dataclass
 class TrainConfig:
-    # From the paper: Section 4.6 and Table 3
+    model: str = "lstm"  # one of src.models.build.MODELS
+
+    # From the paper: Section 4.6 and Tables 1-3
     total_sequences: int = 1_000_000  # Figure 3's x-axis runs to 1000 thousand sequences
-    learning_rate: float = 3e-5
+    learning_rate: float = 3e-5  # per model; see LEARNING_RATES
     momentum: float = 0.9
     clip_value: float = 10.0
 
     # Not stated in the paper
     batch_size: int = 1
 
-    # Where results go
     log_every: int = 1_000  # sequences between log lines
-    log_path: str = "results/copy/log.csv"
-    checkpoint_path: str = "results/copy/lstm.pt"
+
+    @property
+    def log_path(self):
+        return f"results/copy/{self.model}/log.csv"
+
+    @property
+    def checkpoint_path(self):
+        return f"results/copy/{self.model}/model.pt"
 
 
-def train(config: TrainConfig) -> LSTM:
+def train(config: TrainConfig):
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = LSTM().to(device)
+    model = build_model(config.model).to(device)
     optimizer = torch.optim.RMSprop(model.parameters(), lr=config.learning_rate, momentum=config.momentum)
 
     steps = config.total_sequences // config.batch_size
     log_every_steps = max(1, config.log_every // config.batch_size)
-    print(f"training on {device}: {model.num_parameters():,} parameters, {steps:,} steps")
+    print(f"training {config.model} on {device}: {model.num_parameters():,} parameters, {steps:,} steps")
 
     os.makedirs(os.path.dirname(config.log_path), exist_ok=True)
     log_lines = ["sequences,cost_bits"]
