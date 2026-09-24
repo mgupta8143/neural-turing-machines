@@ -87,7 +87,10 @@ runs at a few seeds before concluding a change helped.
 
 ## Results
 
-[results.md](results.md) has the figures and the comparison with the paper.
+[results.md](results.md) has the figures and the comparison with the paper. In short: both NTMs
+reach 0.00 bits within 10k sequences and copy perfectly at six times their training length, while
+the LSTM baseline needs 500k sequences to reach 1.03 bits and is wrong on half the bits at
+length 120.
 
 ## Layout
 
