@@ -49,11 +49,7 @@ def demo(task_name, model_name):
 
 
 def figure_dir(task_name):
-    """Where a task's figures live. A finished run's figures are moved to figures/done/<task>/
-    by hand; until then they are written to figures/<task>/."""
-    for path in (f"figures/done/{task_name}", f"figures/{task_name}"):
-        if os.path.isdir(path):
-            return path
+    """Where a task's figures live."""
     os.makedirs(f"figures/{task_name}", exist_ok=True)
     return f"figures/{task_name}"
 
