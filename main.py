@@ -7,10 +7,14 @@
     uv run main.py try --random 30             or a random sequence of that length
     uv run main.py memory --model ntm-ff       the paper's Figure 6: what the heads read and wrote
     uv run main.py compare                     all three learning curves on one plot (Figure 3)
+    uv run main.py all                         train all three and keep every figure up to date
 """
 
 import argparse
 import os
+import subprocess
+import sys
+import time
 
 import torch
 
@@ -38,10 +42,54 @@ def demo(model_name):
     print(target[0].int())
 
 
+def draw_every_figure():
+    """Redraw whatever the saved checkpoints allow. Safe to call while training is running."""
+    os.makedirs("figures", exist_ok=True)
+    for model in MODELS:
+        config = TrainConfig(model=model)
+        if not os.path.exists(config.checkpoint_path):
+            continue
+        plot_learning_curve(config.log_path, f"figures/{model}_learning_curve.png", label=model)
+        plot_generalisation(model, config.checkpoint_path, f"figures/{model}_generalisation.png")
+        if model.startswith("ntm"):
+            for length in (20, 40):
+                plot_memory_use(model, config.checkpoint_path, f"figures/{model}_memory_length{length}.png", length)
+    plot_all_learning_curves({m: TrainConfig(model=m).log_path for m in MODELS}, "figures/learning_curves.png")
+
+
+def train_all(sequences, batch_size, refresh):
+    """Train every model at once, redrawing the figures every `refresh` seconds.
+
+    Each model writes its own log, checkpoint and figures, so nothing collides, and the figures
+    are always current: stop this whenever you like and keep what has been drawn.
+    """
+    running = {}
+    for model in MODELS:
+        os.makedirs(os.path.dirname(TrainConfig(model=model).log_path), exist_ok=True)
+        log = open(f"results/copy/{model}/train.log", "w")
+        command = [sys.executable, __file__, "train", "--model", model,
+                   "--sequences", str(sequences), "--batch-size", str(batch_size)]
+        running[model] = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
+                                          env={**os.environ, "PYTHONUNBUFFERED": "1"})
+        print(f"training {model}, logging to results/copy/{model}/train.log")
+
+    print(f"redrawing every figure every {refresh // 60} minutes; ctrl-c to stop")
+    try:
+        while any(process.poll() is None for process in running.values()):
+            time.sleep(refresh)
+            draw_every_figure()
+            print(f"{time.strftime('%H:%M')} figures updated")
+    except KeyboardInterrupt:
+        for process in running.values():
+            process.terminate()
+    draw_every_figure()
+    print("figures written to figures/")
+
+
 def main():
     parser = argparse.ArgumentParser(description="NTM and LSTM on the copy task")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ["demo", "train", "plot", "try", "memory", "compare"]:
+    for name in ["demo", "train", "plot", "try", "memory", "compare", "all"]:
         command = commands.add_parser(name)
         command.add_argument("--model", choices=list(MODELS), default="lstm")
     commands.choices["train"].add_argument("--sequences", type=int, default=TrainConfig.total_sequences)
@@ -52,9 +100,16 @@ def main():
     commands.choices["try"].add_argument("vectors", nargs="*", help="8-bit vectors like 10110010")
     commands.choices["try"].add_argument("--random", type=int, help="use a random sequence of this length")
     commands.choices["memory"].add_argument("--length", type=int, default=20, help="sequence length to trace")
+    commands.choices["all"].add_argument("--sequences", type=int, default=TrainConfig.total_sequences)
+    commands.choices["all"].add_argument("--batch-size", type=int, default=TrainConfig.batch_size)
+    commands.choices["all"].add_argument("--refresh", type=int, default=900, help="seconds between figure redraws")
     args = parser.parse_args()
 
     config = TrainConfig(model=args.model)
+
+    if args.command == "all":
+        train_all(args.sequences, args.batch_size, args.refresh)
+        return
 
     if args.command == "compare":
         os.makedirs("figures", exist_ok=True)
