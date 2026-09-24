@@ -5,10 +5,12 @@ copy task, the training loop and the plots work with either model.
 """
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from src.models.ntm.controllers import FeedForwardController, LSTMController
-from src.models.ntm.heads import ReadHead, WriteHead
+from src.models.ntm.heads import ReadHead, WriteHead, stacked_projection
+from src.models.ntm.memory import row_norms
 
 
 class NTM(nn.Module):
@@ -57,29 +59,37 @@ class NTM(nn.Module):
         batch_size, timesteps, _ = x.shape
         memory, weightings, reads, controller_state = self.initial_state(batch_size)
         heads = list(self.write_heads) + list(self.read_heads)  # weightings are stored in this order
+        weight, bias, sizes = stacked_projection(heads)  # all the heads' layers as one matmul
+        # The row norms content_weighting divides by only change when a write changes the
+        # memory, so they are computed once per write and shared by every head that sees that
+        # version of it: the read heads later this timestep, the write heads the next one.
+        norms = row_norms(memory)
 
-        outputs = []
+        features = []
         for t in range(timesteps):
             h, controller_state = self.controller(torch.cat([x[:, t], *reads], dim=1), controller_state)
+            parameters = torch.split(F.linear(h, weight, bias), sizes, dim=1)
 
             # Write first, so the read heads see the memory as it was just written
             for i, head in enumerate(self.write_heads):
-                memory, weightings[i], added = head(h, weightings[i], memory)
+                memory, weightings[i], added = head(parameters[i], weightings[i], memory, norms)
+                norms = row_norms(memory)
                 if trace is not None:
                     trace.setdefault("write_weightings", []).append(weightings[i][0].detach())
                     trace.setdefault("adds", []).append(added[0].detach())
 
             reads = []
             for j, head in enumerate(self.read_heads, start=len(self.write_heads)):
-                r, weightings[j] = head(h, weightings[j], memory)
+                r, weightings[j] = head(parameters[j], weightings[j], memory, norms)
                 reads.append(r)
                 if trace is not None:
                     trace.setdefault("read_weightings", []).append(weightings[j][0].detach())
                     trace.setdefault("reads", []).append(r[0].detach())
 
-            outputs.append(self.output(torch.cat([h, *reads], dim=1)))
+            features.append(torch.cat([h, *reads], dim=1))
 
-        return torch.stack(outputs, dim=1)
+        # One matmul for the whole sequence instead of one per timestep
+        return self.output(torch.stack(features, dim=1))
 
     def num_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters())

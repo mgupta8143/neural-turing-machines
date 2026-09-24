@@ -45,6 +45,21 @@ uv run main.py memory --model ntm-ff --length 40   # write and read weightings o
 uv run main.py try --model ntm-ff 10110010 01100101
 ```
 
+On a GPU each training step replays as a single CUDA graph, one captured per sequence length,
+which is what makes a GPU worth using here: eager, the NTM launches a few hundred tiny kernels per
+sequence and runs several times slower on a GPU than on a laptop CPU. Measured at batch 1:
+
+| | Mac CPU | A10G eager | A10G + CUDA graphs |
+|---|---|---|---|
+| `ntm-ff` | 11.3 ms/seq | 81 ms/seq | 7.8 ms/seq |
+| `lstm` | 18.2 ms/seq | 3.3 ms/seq | 1.0 ms/seq |
+
+`modal_run.py` trains on a rented A10G and downloads the results:
+
+```sh
+uv run --with modal modal run modal_run.py --model lstm
+```
+
 Training writes to `results/copy/<model>/`, figures to `figures/`. The NTMs train on the CPU by
 default: their per-timestep loop of small operations is faster there than on a GPU, which spends
 its time launching kernels. `--device` overrides, and `--compile` is about 1.7x per step after a
