@@ -17,31 +17,10 @@ MODELS = ["lstm", "ntm-ff", "ntm-lstm"]
 #
 # "#Heads" is read here as that many read heads and that many write heads.
 SETTINGS = {
-    #                     ntm-ff: heads, controller   ntm-lstm: heads, controller, layers   lstm: units, layers
     "copy": {
-        "ntm-ff": dict(heads=1, controller_size=100, learning_rate=1e-4),
-        "ntm-lstm": dict(heads=1, controller_size=100, learning_rate=1e-4),
-        "lstm": dict(hidden_size=256, num_layers=3, learning_rate=3e-5),
-    },
-    "repeat-copy": {
-        "ntm-ff": dict(heads=1, controller_size=100, learning_rate=1e-4),
-        "ntm-lstm": dict(heads=1, controller_size=100, learning_rate=1e-4),
-        "lstm": dict(hidden_size=512, num_layers=3, learning_rate=3e-5),
-    },
-    "associative-recall": {
-        "ntm-ff": dict(heads=4, controller_size=256, learning_rate=1e-4),
-        "ntm-lstm": dict(heads=1, controller_size=100, learning_rate=1e-4),
-        "lstm": dict(hidden_size=256, num_layers=3, learning_rate=1e-4),
-    },
-    "dynamic-ngrams": {
-        "ntm-ff": dict(heads=1, controller_size=100, learning_rate=3e-5),
-        "ntm-lstm": dict(heads=1, controller_size=100, learning_rate=3e-5),
-        "lstm": dict(hidden_size=128, num_layers=3, learning_rate=1e-4),
-    },
-    "priority-sort": {
-        "ntm-ff": dict(heads=8, controller_size=512, learning_rate=3e-5),
-        "ntm-lstm": dict(heads=5, controller_size=100, controller_layers=2, learning_rate=3e-5),
-        "lstm": dict(hidden_size=128, num_layers=3, learning_rate=3e-5),
+        "ntm-ff": dict(heads=1, controller_size=100, learning_rate=1e-4),  # Table 1
+        "ntm-lstm": dict(heads=1, controller_size=100, learning_rate=1e-4),  # Table 2
+        "lstm": dict(hidden_size=256, num_layers=3, learning_rate=3e-5),  # Table 3
     },
 }
 

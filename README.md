@@ -4,22 +4,6 @@ The copy task from [Neural Turing Machines](https://arxiv.org/abs/1410.5401) (Gr
 Danihelka, 2014), reproduced from scratch: the LSTM baseline and the NTM with a feed-forward and
 an LSTM controller.
 
-## The tasks
-
-All five from the paper, selected with `--task`:
-
-| | Paper | What it is |
-|---|---|---|
-| `copy` | 4.1 | read L 8-bit vectors, then reproduce them |
-| `repeat-copy` | 4.2 | reproduce them a given number of times, then emit an end marker |
-| `associative-recall` | 4.3 | query with one item, return the item that followed it |
-| `dynamic-ngrams` | 4.4 | predict the next bit of a sequence drawn from a fresh 6-gram table |
-| `priority-sort` | 4.5 | return the 16 highest-priority of 20 vectors, in order |
-
-A task is a module with `INPUT_SIZE`, `OUTPUT_SIZE`, `TIMESTEPS` and a `batch()` returning
-`x`, `target` and a mask of the scored timesteps; nothing else in the code knows which task it
-is running.
-
 ## The copy task
 
 The network reads `L` random 8-bit vectors, then a delimiter, then `L` blank steps during which it
