@@ -35,8 +35,11 @@ def content_weighting(memory, key, strength):
     Strength turns the cosine similarities into a weighting that can be flat (strength 0) or
     concentrated on the single best match (large strength).
     """
-    similarity = F.cosine_similarity(memory, key.unsqueeze(1), dim=-1, eps=EPS)  # (B, N)
-    return F.softmax(strength * similarity, dim=1)
+    # cosine similarity of the key against every location, as one batched matmul: the broadcast
+    # form costs several kernels per head per timestep, which dominates at small batch sizes
+    dot = torch.bmm(memory, key.unsqueeze(-1)).squeeze(-1)  # (B, N)
+    norms = memory.norm(dim=-1).clamp(min=EPS) * key.norm(dim=-1, keepdim=True).clamp(min=EPS)
+    return F.softmax(strength * dot / norms, dim=1)
 
 
 def interpolate(content_w, previous_w, gate):

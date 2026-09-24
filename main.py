@@ -64,11 +64,13 @@ def train_all(sequences, batch_size, refresh, seed=TrainConfig.seed):
     are always current: stop this whenever you like and keep what has been drawn.
     """
     running = {}
+    threads_each = max(1, (os.cpu_count() or 4) // len(MODELS))  # the models run side by side
     for model in MODELS:
         os.makedirs(os.path.dirname(TrainConfig(model=model).log_path), exist_ok=True)
         log = open(f"results/copy/{model}/train.log", "w")
         command = [sys.executable, __file__, "train", "--model", model, "--seed", str(seed),
-                   "--sequences", str(sequences), "--batch-size", str(batch_size)]
+                   "--sequences", str(sequences), "--batch-size", str(batch_size),
+                   "--threads", str(threads_each)]
         running[model] = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
                                           env={**os.environ, "PYTHONUNBUFFERED": "1"})
         print(f"training {model}, logging to results/copy/{model}/train.log")
@@ -97,7 +99,8 @@ def main():
     commands.choices["train"].add_argument("--learning-rate", type=float)
     commands.choices["train"].add_argument("--seed", type=int, default=TrainConfig.seed)
     commands.choices["train"].add_argument("--device", choices=["cpu", "cuda"], default="")
-    commands.choices["train"].add_argument("--compile", action="store_true", help="torch.compile: ~1.7x per step after a slow warmup")
+    commands.choices["train"].add_argument("--compile", action="store_true", help="torch.compile: faster per step after a slow warmup")
+    commands.choices["train"].add_argument("--threads", type=int, default=TrainConfig.threads)
     commands.choices["try"].add_argument("vectors", nargs="*", help="8-bit vectors like 10110010")
     commands.choices["try"].add_argument("--random", type=int, help="use a random sequence of this length")
     commands.choices["memory"].add_argument("--length", type=int, default=20, help="sequence length to trace")
@@ -132,6 +135,7 @@ def main():
         config.seed = args.seed
         config.device = args.device
         config.compile = args.compile
+        config.threads = args.threads
         train(config)
         return
 

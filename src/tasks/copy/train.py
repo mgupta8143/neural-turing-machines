@@ -30,9 +30,12 @@ class TrainConfig:
     batch_size: int = 1
     seed: int = 0  # everything random is drawn from this, so a run can be repeated exactly
     device: str = ""  # "cuda", "cpu", or empty to choose automatically
-    # torch.compile fuses the NTM's many small operations, about 1.7x faster per step, but it
-    # recompiles for each sequence length it sees, so it only pays off on long runs.
+    # torch.compile fuses the NTM's many small operations. It recompiles for each sequence length
+    # it sees, so the warmup is slow, but over a full run it is worth about 1.2x.
     compile: bool = False
+    # These models are small enough that thread synchronisation costs more than it saves; four
+    # threads measured fastest, and `all` divides the cores between its processes.
+    threads: int = 4
 
     log_every: int = 1_000  # sequences between log lines
 
@@ -97,6 +100,9 @@ def record_run(config: TrainConfig, device: str, parameters: int):
 
 
 def train(config: TrainConfig):
+    if config.threads:
+        torch.set_num_threads(config.threads)
+
     # Seeding both generators makes a run repeatable: copy_batch draws its length with `random`
     # and its bits with torch, and the model's initial weights come from torch as well.
     random.seed(config.seed)
