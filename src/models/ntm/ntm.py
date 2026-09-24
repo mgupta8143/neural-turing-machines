@@ -25,6 +25,9 @@ class NTM(nn.Module):
         memory_width: int = 20,
         num_read_heads: int = 1,
         num_write_heads: int = 1,
+        shift_range: int = 3,
+        initial_focus: bool = False,
+        gate_bias: float = 0.0,
     ):
         super().__init__()
         self.memory_locations = memory_locations
@@ -37,8 +40,8 @@ class NTM(nn.Module):
         else:
             self.controller = LSTMController(controller_input, controller_size, controller_layers)
 
-        self.read_heads = nn.ModuleList(ReadHead(controller_size, memory_width) for _ in range(num_read_heads))
-        self.write_heads = nn.ModuleList(WriteHead(controller_size, memory_width) for _ in range(num_write_heads))
+        self.read_heads = nn.ModuleList(ReadHead(controller_size, memory_width, shift_range) for _ in range(num_read_heads))
+        self.write_heads = nn.ModuleList(WriteHead(controller_size, memory_width, shift_range) for _ in range(num_write_heads))
         self.output = nn.Linear(controller_size + num_read_heads * memory_width, output_size)
 
         # Learned starting state, reset at the start of every sequence ("bias values" in the paper).
@@ -47,6 +50,21 @@ class NTM(nn.Module):
         # 128 locations never differentiate. In practice the model then plateaus near chance.
         self.initial_memory = nn.Parameter(torch.randn(memory_locations, memory_width) * 0.05)
         self.initial_w = nn.Parameter(torch.randn(len(self.read_heads) + len(self.write_heads), memory_locations))
+        if initial_focus:
+            # Start every head focused on location 0 rather than spread over memory. A diffuse
+            # starting weighting is a poor thing to shift, which pushes a controller that can
+            # generate keys towards content lookup instead of location-based iteration.
+            with torch.no_grad():
+                self.initial_w.fill_(0.0)
+                self.initial_w[:, 0] = 5.0
+        if gate_bias:
+            # The interpolation gate decides between the content weighting and where the head
+            # already was. A negative bias starts it favouring the previous weighting, so shifting
+            # is the path of least resistance early in training.
+            with torch.no_grad():
+                for head in list(self.read_heads) + list(self.write_heads):
+                    key_size, strength_size = head.sizes[0], head.sizes[1]
+                    head.fc.bias[key_size + strength_size] = gate_bias  # key, strength, then gate
         self.initial_reads = nn.Parameter(torch.zeros(num_read_heads, memory_width))
 
     def initial_state(self, batch_size: int):
