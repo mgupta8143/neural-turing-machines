@@ -57,7 +57,7 @@ def draw_every_figure():
     plot_all_learning_curves({m: TrainConfig(model=m).log_path for m in MODELS}, "figures/learning_curves.png")
 
 
-def train_all(sequences, batch_size, refresh):
+def train_all(sequences, batch_size, refresh, seed=TrainConfig.seed):
     """Train every model at once, redrawing the figures every `refresh` seconds.
 
     Each model writes its own log, checkpoint and figures, so nothing collides, and the figures
@@ -67,7 +67,7 @@ def train_all(sequences, batch_size, refresh):
     for model in MODELS:
         os.makedirs(os.path.dirname(TrainConfig(model=model).log_path), exist_ok=True)
         log = open(f"results/copy/{model}/train.log", "w")
-        command = [sys.executable, __file__, "train", "--model", model,
+        command = [sys.executable, __file__, "train", "--model", model, "--seed", str(seed),
                    "--sequences", str(sequences), "--batch-size", str(batch_size)]
         running[model] = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
                                           env={**os.environ, "PYTHONUNBUFFERED": "1"})
@@ -95,6 +95,7 @@ def main():
     commands.choices["train"].add_argument("--sequences", type=int, default=TrainConfig.total_sequences)
     commands.choices["train"].add_argument("--batch-size", type=int, default=TrainConfig.batch_size)
     commands.choices["train"].add_argument("--learning-rate", type=float)
+    commands.choices["train"].add_argument("--seed", type=int, default=TrainConfig.seed)
     commands.choices["train"].add_argument("--device", choices=["cpu", "cuda"], default="")
     commands.choices["train"].add_argument("--compile", action="store_true", help="torch.compile: ~1.7x per step after a slow warmup")
     commands.choices["try"].add_argument("vectors", nargs="*", help="8-bit vectors like 10110010")
@@ -102,13 +103,14 @@ def main():
     commands.choices["memory"].add_argument("--length", type=int, default=20, help="sequence length to trace")
     commands.choices["all"].add_argument("--sequences", type=int, default=TrainConfig.total_sequences)
     commands.choices["all"].add_argument("--batch-size", type=int, default=TrainConfig.batch_size)
+    commands.choices["all"].add_argument("--seed", type=int, default=TrainConfig.seed)
     commands.choices["all"].add_argument("--refresh", type=int, default=900, help="seconds between figure redraws")
     args = parser.parse_args()
 
     config = TrainConfig(model=args.model)
 
     if args.command == "all":
-        train_all(args.sequences, args.batch_size, args.refresh)
+        train_all(args.sequences, args.batch_size, args.refresh, args.seed)
         return
 
     if args.command == "compare":
@@ -119,7 +121,7 @@ def main():
         return
 
     if args.command == "demo":
-        torch.manual_seed(0)
+        torch.manual_seed(TrainConfig.seed)
         demo(args.model)
         return
 
@@ -127,6 +129,7 @@ def main():
         config.total_sequences = args.sequences
         config.batch_size = args.batch_size
         config.learning_rate = args.learning_rate or LEARNING_RATES[args.model]
+        config.seed = args.seed
         config.device = args.device
         config.compile = args.compile
         train(config)

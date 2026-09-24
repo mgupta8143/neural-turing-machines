@@ -35,7 +35,7 @@ uv sync
 uv run pytest                  # checks for the memory, addressing and gradients
 
 uv run main.py all             # train all three, redrawing every figure every 15 minutes
-uv run main.py all --sequences 100000 --refresh 300
+uv run main.py all --sequences 100000 --refresh 300 --seed 1
 
 uv run main.py demo --model ntm-ff                 # one batch through an untrained model
 uv run main.py train --model ntm-ff                # one model on its own
@@ -49,6 +49,26 @@ Training writes to `results/copy/<model>/`, figures to `figures/`. The NTMs trai
 default: their per-timestep loop of small operations is faster there than on a GPU, which spends
 its time launching kernels. `--device` overrides, and `--compile` is about 1.7x per step after a
 slow warmup.
+
+## Reproducing a run
+
+The repository pins everything that decides the numbers, and each run records the rest.
+
+```sh
+uv sync --frozen    # exact package versions from uv.lock, Python 3.12 from .python-version
+uv run main.py all  # seed 0, batch 1, the paper's learning rates
+```
+
+Every run writes `results/copy/<model>/run.json` with its seed, batch size, learning rate,
+clipping, parameter count, device, PyTorch version and the git commit, so a figure can always be
+traced back to the settings that produced it. Pass `--seed` to `train` or `all` to vary it;
+`copy_batch` draws its lengths and bits from that seed, as do the initial weights.
+
+Two caveats worth knowing. Runs repeat exactly on the same machine and PyTorch build, but floating
+point accumulates differently across CPU architectures, thread counts and CUDA versions, so
+another machine reproduces the curve, not the digits. And a single run is a single sample: the NTM
+in particular varies between seeds in how quickly it finds the addressing solution, so compare
+runs at a few seeds before concluding a change helped.
 
 ## Results
 

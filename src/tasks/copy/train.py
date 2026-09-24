@@ -1,7 +1,10 @@
 """Training the LSTM baseline on the copy task, with the settings from the paper."""
 
+import json
 import math
 import os
+import random
+import subprocess
 import time
 from dataclasses import dataclass
 
@@ -25,12 +28,17 @@ class TrainConfig:
 
     # Not stated in the paper
     batch_size: int = 1
+    seed: int = 0  # everything random is drawn from this, so a run can be repeated exactly
     device: str = ""  # "cuda", "cpu", or empty to choose automatically
     # torch.compile fuses the NTM's many small operations, about 1.7x faster per step, but it
     # recompiles for each sequence length it sees, so it only pays off on long runs.
     compile: bool = False
 
     log_every: int = 1_000  # sequences between log lines
+
+    @property
+    def run_path(self):
+        return f"results/copy/{self.model}/run.json"
 
     @property
     def log_path(self):
@@ -62,7 +70,38 @@ def choose_device(config: TrainConfig) -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
+def record_run(config: TrainConfig, device: str, parameters: int):
+    """Write down everything needed to repeat this run, next to its results."""
+    try:
+        commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+    except (subprocess.SubprocessError, FileNotFoundError):
+        commit = "unknown"
+    details = {
+        "model": config.model,
+        "seed": config.seed,
+        "batch_size": config.batch_size,
+        "learning_rate": config.learning_rate,
+        "momentum": config.momentum,
+        "clip_norm": config.clip_norm,
+        "clip_value": config.clip_value,
+        "total_sequences": config.total_sequences,
+        "parameters": parameters,
+        "device": device,
+        "torch": torch.__version__,
+        "commit": commit,
+        "started": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    with open(config.run_path, "w") as f:
+        json.dump(details, f, indent=2)
+    return details
+
+
 def train(config: TrainConfig):
+    # Seeding both generators makes a run repeatable: copy_batch draws its length with `random`
+    # and its bits with torch, and the model's initial weights come from torch as well.
+    random.seed(config.seed)
+    torch.manual_seed(config.seed)
+
     device = choose_device(config)
     model = build_model(config.model).to(device)
     # Compile a copy for speed, but keep `model` for checkpoints: a compiled module renames its
@@ -72,9 +111,11 @@ def train(config: TrainConfig):
 
     steps = config.total_sequences // config.batch_size
     log_every_steps = max(1, config.log_every // config.batch_size)
-    print(f"training {config.model} on {device}: {model.num_parameters():,} parameters, {steps:,} steps")
+    print(f"training {config.model} on {device}: {model.num_parameters():,} parameters, "
+          f"{steps:,} steps, batch {config.batch_size}, lr {config.learning_rate}, seed {config.seed}")
 
     os.makedirs(os.path.dirname(config.log_path), exist_ok=True)
+    record_run(config, device, model.num_parameters())
     log_lines = ["sequences,cost_bits"]
     costs = []
     start = time.time()
