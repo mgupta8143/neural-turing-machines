@@ -48,6 +48,16 @@ def demo(task_name, model_name):
     print(target[0][mask[0]].int())
 
 
+def figure_dir(task_name):
+    """Where a task's figures live. A finished run's figures are moved to figures/done/<task>/
+    by hand; until then they are written to figures/<task>/."""
+    for path in (f"figures/done/{task_name}", f"figures/{task_name}"):
+        if os.path.isdir(path):
+            return path
+    os.makedirs(f"figures/{task_name}", exist_ok=True)
+    return f"figures/{task_name}"
+
+
 def draw_every_figure(task_name):
     """Redraw whatever the saved checkpoints allow. Safe to call while training is running."""
     os.makedirs("figures", exist_ok=True)
@@ -57,7 +67,7 @@ def draw_every_figure(task_name):
         config = TrainConfig(model=model, task=task_name)
         if not os.path.exists(config.checkpoint_path):
             continue
-        prefix = f"figures/{task_name}_{model}"
+        prefix = f"{figure_dir(task_name)}/{model}"
         plot_learning_curve(config.log_path, f"{prefix}_learning_curve.png", label=model)
         if generalisation:
             generalisation(model, config.checkpoint_path, f"{prefix}_generalisation.png")
@@ -68,7 +78,7 @@ def draw_every_figure(task_name):
             else:  # every other task gets the generic version on one of its own examples
                 plot_memory_use(task_name, model, config.checkpoint_path, f"{prefix}_memory.png")
     logs = {model: TrainConfig(model=model, task=task_name).log_path for model in MODELS}
-    plot_all_learning_curves(logs, f"figures/{task_name}_learning_curves.png")
+    plot_all_learning_curves(logs, f"{figure_dir(task_name)}/learning_curves.png")
 
 
 def train_all(task_name, sequences, batch_size, refresh, seed=TrainConfig.seed):
@@ -127,7 +137,6 @@ def main():
     args = parser.parse_args()
 
     config = TrainConfig(model=args.model, task=args.task)
-    prefix = f"figures/{args.task}_{args.model}"
 
     if args.command == "all":
         train_all(args.task, args.sequences, args.batch_size, args.refresh, args.seed)
@@ -136,7 +145,7 @@ def main():
     if args.command == "compare":
         os.makedirs("figures", exist_ok=True)
         logs = {model: TrainConfig(model=model, task=args.task).log_path for model in MODELS}
-        out = f"figures/{args.task}_learning_curves.png"
+        out = f"{figure_dir(args.task)}/learning_curves.png"
         plot_all_learning_curves(logs, out)
         print(f"saved {out}")
         return
@@ -162,7 +171,7 @@ def main():
               f"or wait for its first {config.log_every:,} sequences.")
         return
 
-    os.makedirs("figures", exist_ok=True)
+    prefix = f"{figure_dir(args.task)}/{args.model}"
     if args.command == "plot":
         plot_learning_curve(config.log_path, f"{prefix}_learning_curve.png", label=args.model)
         print(f"saved {prefix}_learning_curve.png")
