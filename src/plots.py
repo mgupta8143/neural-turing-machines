@@ -6,6 +6,7 @@ its memory-use trace - lives in the task's own plots module and is reached throu
 """
 
 import csv
+import json
 import os
 
 import matplotlib.pyplot as plt
@@ -72,10 +73,23 @@ PAPER_STYLE = {  # colours and markers of the paper's Figure 3
 }
 
 
+def planned_sequences(log_path: str) -> int:
+    """How many sequences the run that wrote this log was asked for, from its run.json."""
+    run = os.path.join(os.path.dirname(log_path), "run.json")
+    if os.path.exists(run):
+        with open(run) as f:
+            return json.load(f).get("total_sequences", 0)
+    return 0
+
+
 def plot_all_learning_curves(log_paths: dict, out_path: str, chunk: int = 10_000):
-    """The paper's Figure 3: every model on one pair of axes."""
+    """The paper's Figure 3: every model on one pair of axes.
+
+    The x-axis runs to the length the runs were asked for, not to where they have got to, so a
+    plot drawn while training is still going keeps the same axes as the finished one.
+    """
     fig, (full, paper) = plt.subplots(1, 2, figsize=(12, 4.5))
-    longest = 1
+    longest = max((planned_sequences(p) for p in log_paths.values()), default=0) / 1000 or 1
 
     for model, log_path in log_paths.items():
         if not os.path.exists(log_path):
