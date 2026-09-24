@@ -27,6 +27,7 @@ class CapturedStep:
 
         # Filled in by every graph, read at log time, so nothing has to wait on the GPU per step
         self.cost_total = torch.zeros((), device=device)
+        self.cost_max = torch.zeros((), device=device)
         self.sequences = torch.zeros((), device=device)
 
         self.graphs, self.buffers = {}, {}
@@ -89,9 +90,15 @@ class CapturedStep:
             buffer.copy_(value, non_blocking=True)
         self.graphs[timesteps].replay()
 
-    def average_cost(self) -> float:
-        """Mean cost in bits since the last call. Reads from the GPU, so call it at log time."""
+    def average_cost(self):
+        """Mean and worst cost in bits since the last call. Reads from the GPU: call it at log time.
+
+        The worst is worth having: with one sequence per update the mean is dominated by a rare
+        heavy tail, which can make a converged run look as though it has diverged.
+        """
         average = (self.cost_total / self.sequences.clamp(min=1)).item()
+        worst = self.cost_max.item()
         self.cost_total.zero_()
+        self.cost_max.zero_()
         self.sequences.zero_()
-        return average
+        return average, worst

@@ -161,7 +161,7 @@ def train(config: TrainConfig):
 
     os.makedirs(os.path.dirname(config.log_path), exist_ok=True)
     record_run(config, device, model.num_parameters())
-    log_lines = ["sequences,cost_bits"]
+    log_lines = ["sequences,cost_bits,median_bits,max_bits"]
     best_cost = float("inf")
     costs = []
     start = time.time()
@@ -187,16 +187,23 @@ def train(config: TrainConfig):
 
         if step % log_every_steps == 0:
             sequences = step * config.batch_size
-            cost = captured.average_cost() if captured else torch.stack(costs).mean().item()
+            if captured:
+                # a captured graph cannot sort, so it tracks the worst sequence rather than the median
+                cost, worst = captured.average_cost()
+                middle = ""
+            else:
+                window = torch.stack(costs)
+                cost, worst = window.mean().item(), window.max().item()
+                middle = f"{window.median().item():.4f}"
             costs = []
-            log_lines.append(f"{sequences},{cost:.4f}")
+            log_lines.append(f"{sequences},{cost:.4f},{middle},{worst:.4f}")
             save_log(log_lines, config.log_path)
             save_checkpoint(model, config.checkpoint_path)
             if cost < best_cost:  # training can drift away from a good solution; keep the best one
                 best_cost = cost
                 save_checkpoint(model, config.best_checkpoint_path)
             minutes = (time.time() - start) / 60
-            print(f"sequences {sequences:>9,}  cost (bits) {cost:6.2f}  {minutes:5.1f} min")
+            print(f"sequences {sequences:>9,}  cost (bits) {cost:6.2f}  worst {worst:7.2f}  {minutes:5.1f} min")
 
     return model
 
