@@ -25,7 +25,14 @@ class TrainConfig:
     learning_rate: float = 0.0  # 0 means take the paper's rate for this task and model
     momentum: float = 0.9
     clip_value: float = 10.0
-    clip_norm: float = 10.0  # NTM gradients spike; clipping the whole gradient's norm is steadier
+    clip_norm: float = 10.0
+    # Section 4.6 cites RMSProp "in the form described in (Graves, 2013)": centered, decay 0.95,
+    # and a damping term of 1e-4 inside the square root. PyTorch's defaults are 0.99 and 1e-8,
+    # and that 1e-8 inflates the step for parameters whose gradient variance is small, which is
+    # most of an LSTM controller's recurrent matrix.
+    alpha: float = 0.95
+    eps: float = 1e-4
+    centered: bool = True  # NTM gradients spike; clipping the whole gradient's norm is steadier
 
     # Not stated in the paper
     batch_size: int = 1
@@ -54,6 +61,10 @@ class TrainConfig:
     @property
     def log_path(self):
         return f"{self.results_path}/log.csv"
+
+    @property
+    def best_checkpoint_path(self):
+        return f"results/{self.task}/{self.model}/best.pt"
 
     @property
     def checkpoint_path(self):
@@ -95,6 +106,9 @@ def record_run(config: TrainConfig, device: str, parameters: int):
         "learning_rate": config.learning_rate,
         "momentum": config.momentum,
         "clip_norm": config.clip_norm,
+        "alpha": config.alpha,
+        "eps": config.eps,
+        "centered": config.centered,
         "clip_value": config.clip_value,
         "total_sequences": config.total_sequences,
         "parameters": parameters,
@@ -128,6 +142,7 @@ def train(config: TrainConfig):
     # parameters, which would make the saved file unloadable by `plot` and `try`.
     step_model = torch.compile(model, dynamic=True) if config.compile else model
     optimizer = torch.optim.RMSprop(model.parameters(), lr=config.learning_rate, momentum=config.momentum,
+                                    alpha=config.alpha, eps=config.eps, centered=config.centered,
                                     capturable=graphed, foreach=graphed)
 
     # Capture the step as CUDA graphs once the optimiser exists: the graphs hold references to
@@ -147,6 +162,7 @@ def train(config: TrainConfig):
     os.makedirs(os.path.dirname(config.log_path), exist_ok=True)
     record_run(config, device, model.num_parameters())
     log_lines = ["sequences,cost_bits"]
+    best_cost = float("inf")
     costs = []
     start = time.time()
 
@@ -176,6 +192,9 @@ def train(config: TrainConfig):
             log_lines.append(f"{sequences},{cost:.4f}")
             save_log(log_lines, config.log_path)
             save_checkpoint(model, config.checkpoint_path)
+            if cost < best_cost:  # training can drift away from a good solution; keep the best one
+                best_cost = cost
+                save_checkpoint(model, config.best_checkpoint_path)
             minutes = (time.time() - start) / 60
             print(f"sequences {sequences:>9,}  cost (bits) {cost:6.2f}  {minutes:5.1f} min")
 
