@@ -5,6 +5,7 @@ Figure 5: targets and outputs for test lengths longer than the training range of
 """
 
 import csv
+import os
 
 import matplotlib.pyplot as plt
 import torch
@@ -46,6 +47,51 @@ def plot_learning_curve(log_path: str, out_path: str, label: str = "LSTM", chunk
         ax.set_ylabel("cost per sequence (bits)")
         ax.legend(frameon=False)
     full.set_ylim(0, max(cost) * 1.05)
+    full.set_title("Whole run")
+    paper.set_ylim(0, 10)
+    paper.set_title("Same scale as the paper's Figure 3")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+
+
+PAPER_STYLE = {  # colours and markers of the paper's Figure 3
+    "lstm": ("LSTM", "#1f3f99", "o"),
+    "ntm-lstm": ("NTM with LSTM Controller", "#1f8a3f", "s"),
+    "ntm-ff": ("NTM with Feedforward Controller", "#c81e1e", "^"),
+}
+
+
+def plot_all_learning_curves(log_paths: dict, out_path: str, chunk: int = 10_000):
+    """The paper's Figure 3: every model on one pair of axes."""
+    fig, (full, paper) = plt.subplots(1, 2, figsize=(12, 4.5))
+    longest = 1
+
+    for model, log_path in log_paths.items():
+        if not os.path.exists(log_path):
+            continue
+        with open(log_path) as f:
+            rows = list(csv.DictReader(f))
+        if not rows:
+            continue
+        chunks = {}
+        for row in rows:
+            end = -(-int(row["sequences"]) // chunk) * chunk
+            chunks.setdefault(end, []).append(float(row["cost_bits"]))
+        thousands = [end / 1000 for end in chunks]
+        cost = [sum(values) / len(values) for values in chunks.values()]
+        longest = max(longest, thousands[-1])
+
+        label, colour, marker = PAPER_STYLE[model]
+        for ax in (full, paper):
+            ax.plot(thousands, cost, marker=marker, color=colour, markersize=3.5, linewidth=1, label=label)
+
+    for ax in (full, paper):
+        ax.set_xlim(0, max(1000, longest))
+        ax.set_xlabel("sequence number (thousands)")
+        ax.set_ylabel("cost per sequence (bits)")
+        ax.legend(frameon=False, fontsize=9)
+    full.set_ylim(bottom=0)
     full.set_title("Whole run")
     paper.set_ylim(0, 10)
     paper.set_title("Same scale as the paper's Figure 3")

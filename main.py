@@ -6,6 +6,7 @@
     uv run main.py try 10110010 01100101 ...   copy your own 8-bit vectors
     uv run main.py try --random 30             or a random sequence of that length
     uv run main.py memory --model ntm-ff       the paper's Figure 6: what the heads read and wrote
+    uv run main.py compare                     all three learning curves on one plot (Figure 3)
 """
 
 import argparse
@@ -15,7 +16,7 @@ import torch
 
 from src.models.build import LEARNING_RATES, MODELS, build_model
 from src.tasks.copy.data import copy_batch
-from src.tasks.copy.plots import plot_generalisation, plot_learning_curve, plot_memory_use
+from src.tasks.copy.plots import plot_all_learning_curves, plot_generalisation, plot_learning_curve, plot_memory_use
 from src.tasks.copy.train import TrainConfig, train
 from src.tasks.copy.try_it import parse_vectors, try_sequence
 
@@ -40,7 +41,7 @@ def demo(model_name):
 def main():
     parser = argparse.ArgumentParser(description="NTM and LSTM on the copy task")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ["demo", "train", "plot", "try", "memory"]:
+    for name in ["demo", "train", "plot", "try", "memory", "compare"]:
         command = commands.add_parser(name)
         command.add_argument("--model", choices=list(MODELS), default="lstm")
     commands.choices["train"].add_argument("--sequences", type=int, default=TrainConfig.total_sequences)
@@ -54,6 +55,13 @@ def main():
     args = parser.parse_args()
 
     config = TrainConfig(model=args.model)
+
+    if args.command == "compare":
+        os.makedirs("figures", exist_ok=True)
+        logs = {model: TrainConfig(model=model).log_path for model in MODELS}
+        plot_all_learning_curves(logs, "figures/learning_curves.png")
+        print("saved figures/learning_curves.png")
+        return
 
     if args.command == "demo":
         torch.manual_seed(0)

@@ -39,10 +39,11 @@ that destroys what the model has learned. The LSTM baseline keeps the paper's va
 
 Common settings from the paper (Section 4.6 and Tables 1-3): RMSProp with momentum 0.9,
 gradients clipped elementwise to (-10, 10), cross-entropy reported in bits per sequence, and a
-learning rate of 3e-5 for the LSTM baseline or 1e-4 for the NTMs. The exception is `ntm-lstm`,
-which defaults to 1e-3: the paper's rates assume one sequence per update, and with batch 16 the
-recurrent controller does not learn at 1e-4. Pass `--learning-rate 1e-4 --batch-size 1` for the
-paper's exact setup. The NTMs use a 128 x 20
+learning rate of 3e-5 for the LSTM baseline or 1e-4 for the NTMs, and one sequence per update.
+
+Those rates are tied to that batch size. With `--batch-size 16` there are 16x fewer updates, and
+the LSTM-controller NTM then sits near chance at 1e-4 and needs about 1e-3, while the
+feed-forward one still learns. Training at batch 1 avoids the question and matches the paper. The NTMs use a 128 x 20
 memory, a controller of 100 units, and one read and one write head.
 
 ## Usage
@@ -64,6 +65,9 @@ uv run main.py train --model ntm-ff --device cpu --compile                # NTM 
 
 # Draw the learning curve (Figure 3) and generalisation plot (Figure 5) into figures/
 uv run main.py plot --model ntm-ff
+
+# All three learning curves on one plot, as in the paper's Figure 3
+uv run main.py compare
 
 # The paper's Figure 6: the write and read weightings over time (NTM only)
 uv run main.py memory --model ntm-ff --length 20   # figures/ntm-ff_memory_length20.png

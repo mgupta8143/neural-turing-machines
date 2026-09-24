@@ -12,10 +12,12 @@ SEQUENCES=${SEQUENCES:-1000000}   # per model
 REFRESH=${REFRESH:-900}           # seconds between figure refreshes
 DRIVE=${DRIVE:-/content/drive/MyDrive/ntm-results}
 
-echo "$(date '+%H:%M') starting ntm-ff and ntm-lstm (CPU, batch 16) and lstm (GPU, the paper's batch 1)"
-python -u main.py train --model ntm-ff --batch-size 16 --sequences "$SEQUENCES" > train_ntm-ff.log 2>&1 &
-python -u main.py train --model ntm-lstm --batch-size 16 --sequences "$SEQUENCES" > train_ntm-lstm.log 2>&1 &
-python -u main.py train --model lstm --sequences "$SEQUENCES" > train_lstm.log 2>&1 &
+BATCH=${BATCH:-1}   # the paper trains on one sequence per update
+
+echo "$(date '+%H:%M') starting all three models at batch $BATCH, $SEQUENCES sequences each"
+python -u main.py train --model ntm-ff --batch-size "$BATCH" --sequences "$SEQUENCES" > train_ntm-ff.log 2>&1 &
+python -u main.py train --model ntm-lstm --batch-size "$BATCH" --sequences "$SEQUENCES" > train_ntm-lstm.log 2>&1 &
+python -u main.py train --model lstm --batch-size "$BATCH" --sequences "$SEQUENCES" > train_lstm.log 2>&1 &
 
 refresh_figures() {
   for model in ntm-ff ntm-lstm lstm; do
@@ -26,6 +28,7 @@ refresh_figures() {
       python main.py memory --model "$model" --length 40 > /dev/null 2>&1
     fi
   done
+  python main.py compare > /dev/null 2>&1
   if [ -d "$(dirname "$DRIVE")" ]; then
     mkdir -p "$DRIVE" && cp -r figures results "$DRIVE"/ 2> /dev/null
   fi
