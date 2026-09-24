@@ -3,22 +3,22 @@
 import matplotlib.pyplot as plt
 import torch
 
-from src.tasks.copy.data import BITS, make_input
-from src.tasks.copy.plots import load_model
+from src.models.build import load_model
+from src.tasks.copy import data as copy_data
 
 
 def parse_vectors(vectors: list[str]) -> torch.Tensor:
     """Turns ["10110010", "01100101"] into a target of shape (1, L, 8)."""
     for v in vectors:
-        if len(v) != BITS or set(v) - {"0", "1"}:
+        if len(v) != copy_data.BITS or set(v) - {"0", "1"}:
             raise SystemExit(f"'{v}' isn't an 8-bit vector: use exactly 8 characters of 0 and 1, e.g. 10110010")
     return torch.tensor([[[int(bit) for bit in v] for v in vectors]]).float()
 
 
 def try_sequence(model_name: str, checkpoint_path: str, target: torch.Tensor, out_path: str):
-    model = load_model(model_name, checkpoint_path)
+    model = load_model(model_name, checkpoint_path, copy_data)
     length = target.shape[1]
-    x = make_input(target)
+    x = copy_data.make_input(target)
     with torch.no_grad():
         outputs = torch.sigmoid(model(x)[0, length + 1:])  # probability each bit is 1, recall steps only
     predicted = (outputs > 0.5).int()

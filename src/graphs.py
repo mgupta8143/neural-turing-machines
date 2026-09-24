@@ -4,21 +4,21 @@ The NTM launches a few hundred tiny GPU kernels per sequence, so on a GPU it spe
 launching work rather than doing it. A CUDA graph records the whole step once - forward,
 backward, gradient clipping and the optimiser update - and replays it as a single launch.
 
-Capture needs static shapes, and the copy task's sequence length varies from 1 to 20. Padding
-every sequence to the longest would double the timesteps, so instead each length gets its own
-graph, which keeps the arithmetic identical to the eager version.
+Capture needs static shapes, and every task here draws a random sequence length, so the number
+of timesteps varies from batch to batch. Padding every example to the longest would add work to
+every step, so instead each timestep count the task can produce gets its own graph, which keeps
+the arithmetic identical to the eager version.
 """
 
-import math
-
 import torch
-import torch.nn.functional as F
+
+from src.loss import masked_bce
 
 
 class CapturedStep:
-    """One captured training step per sequence length, plus the running cost in bits."""
+    """One captured training step per timestep count, plus the running cost in bits."""
 
-    def __init__(self, model, optimizer, clip_norm, max_length=20, input_size=9, bits=8):
+    def __init__(self, model, optimizer, clip_norm, task, batch_size=1):
         self.model = model
         self.optimizer = optimizer
         self.clip_norm = clip_norm
@@ -30,25 +30,24 @@ class CapturedStep:
         self.sequences = torch.zeros((), device=device)
 
         self.graphs, self.buffers = {}, {}
-        for length in range(1, max_length + 1):
-            self._capture(length, device, input_size, bits)
+        for timesteps in task.TIMESTEPS:
+            self._capture(timesteps, task, batch_size, device)
 
-    def _capture(self, length, device, input_size, bits):
-        x = torch.zeros(1, 2 * length + 1, input_size, device=device)
-        target = torch.zeros(1, length, bits, device=device)
-        # cost per sequence in bits, the paper's metric, accumulated inside the graph
-        to_bits = length * bits / math.log(2)
+    def _capture(self, timesteps, task, batch_size, device):
+        x = torch.zeros(batch_size, timesteps, task.INPUT_SIZE, device=device)
+        target = torch.zeros(batch_size, timesteps, task.OUTPUT_SIZE, device=device)
+        # The mask is held as floats rather than bools so the loss's multiply stays in float32
+        mask = torch.zeros(batch_size, timesteps, device=device)
 
         def step():
-            logits = self.model(x)[:, length + 1:]
-            loss = F.binary_cross_entropy_with_logits(logits, target)
+            loss, cost = masked_bce(self.model(x), target, mask)
             for parameter in self.parameters:
                 if parameter.grad is not None:
                     parameter.grad.zero_()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.parameters, self.clip_norm)
             self.optimizer.step()
-            self.cost_total += loss.detach() * to_bits
+            self.cost_total += cost
             self.sequences += 1
 
         # Warm up on a side stream, which CUDA requires before capturing
@@ -66,11 +65,11 @@ class CapturedStep:
         graph = torch.cuda.CUDAGraph()
         with torch.cuda.graph(graph, pool=self.pool):
             step()
-        self.graphs[length], self.buffers[length] = graph, (x, target)
+        self.graphs[timesteps], self.buffers[timesteps] = graph, (x, target, mask)
 
     @property
     def pool(self):
-        """Share one memory pool across the graphs so 20 of them do not each reserve their own."""
+        """Share one memory pool across the graphs so they do not each reserve their own."""
         existing = next(iter(self.graphs.values()), None)
         return existing.pool() if existing else None
 
@@ -84,12 +83,11 @@ class CapturedStep:
                     if isinstance(value, torch.Tensor):
                         value.zero_()
 
-    def run(self, x, target):
-        length = target.shape[1]
-        buffered_x, buffered_target = self.buffers[length]
-        buffered_x.copy_(x, non_blocking=True)
-        buffered_target.copy_(target, non_blocking=True)
-        self.graphs[length].replay()
+    def run(self, x, target, mask):
+        timesteps = x.shape[1]
+        for buffer, value in zip(self.buffers[timesteps], (x, target, mask)):
+            buffer.copy_(value, non_blocking=True)
+        self.graphs[timesteps].replay()
 
     def average_cost(self) -> float:
         """Mean cost in bits since the last call. Reads from the GPU, so call it at log time."""

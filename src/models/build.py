@@ -1,12 +1,18 @@
-"""The models you can train on the copy task, and the paper's learning rate for each."""
+"""The models you can train, and the paper's learning rate for each.
+
+Each takes the task's channel counts, so the same three models fit any task in the registry.
+"""
+
+import torch
 
 from src.models.lstm import LSTM
 from src.models.ntm.ntm import NTM
 
 MODELS = {
-    "lstm": lambda: LSTM(),  # the baseline: 3 x 256 LSTM, Table 3
-    "ntm-ff": lambda: NTM(controller="feedforward"),  # Table 1
-    "ntm-lstm": lambda: NTM(controller="lstm"),  # Table 2
+    # the baseline: 3 x 256 LSTM, Table 3
+    "lstm": lambda i, o: LSTM(input_size=i, output_size=o),
+    "ntm-ff": lambda i, o: NTM(input_size=i, output_size=o, controller="feedforward"),  # Table 1
+    "ntm-lstm": lambda i, o: NTM(input_size=i, output_size=o, controller="lstm"),  # Table 2
 }
 
 # The paper's rates, Tables 1-3. They assume one sequence per update, which is the default here.
@@ -15,7 +21,15 @@ MODELS = {
 LEARNING_RATES = {"lstm": 3e-5, "ntm-ff": 1e-4, "ntm-lstm": 1e-4}
 
 
-def build_model(name):
+def build_model(name, input_size, output_size):
     if name not in MODELS:
         raise SystemExit(f"unknown model '{name}': choose from {', '.join(MODELS)}")
-    return MODELS[name]()
+    return MODELS[name](input_size, output_size)
+
+
+def load_model(name, checkpoint_path, task):
+    """The trained model, ready for the plots: same shape as the run that saved it."""
+    model = build_model(name, task.INPUT_SIZE, task.OUTPUT_SIZE)
+    model.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
+    model.eval()
+    return model

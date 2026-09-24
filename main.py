@@ -1,13 +1,17 @@
-"""Command line for the copy task.
+"""Command line for the paper's tasks.
 
     uv run main.py demo                        run one batch through an untrained model
     uv run main.py train --model ntm-ff        train (also: lstm, ntm-lstm)
+    uv run main.py train --task repeat-copy    train on another task (also: copy)
     uv run main.py plot --model ntm-ff         draw Figures 3 and 5 into figures/
     uv run main.py try 10110010 01100101 ...   copy your own 8-bit vectors
     uv run main.py try --random 30             or a random sequence of that length
     uv run main.py memory --model ntm-ff       the paper's Figure 6: what the heads read and wrote
     uv run main.py compare                     all three learning curves on one plot (Figure 3)
     uv run main.py all                         train all three and keep every figure up to date
+
+Every command takes --task; it defaults to copy. Results go to results/<task>/<model>/ and
+figures to figures/<task>_<model>_*.png.
 """
 
 import argparse
@@ -19,45 +23,52 @@ import time
 import torch
 
 from src.models.build import LEARNING_RATES, MODELS, build_model
-from src.tasks.copy.data import copy_batch
-from src.tasks.copy.plots import plot_all_learning_curves, plot_generalisation, plot_learning_curve, plot_memory_use
-from src.tasks.copy.train import TrainConfig, train
+from src.plots import plot_all_learning_curves, plot_learning_curve, task_plot
 from src.tasks.copy.try_it import parse_vectors, try_sequence
+from src.tasks.registry import TASKS, get_task
+from src.train import TrainConfig, train
 
 
-def demo(model_name):
-    x, target = copy_batch(batch_size=2, min_len=3, max_len=3)
-    print("input x:", tuple(x.shape), "= (batch, 2L + 1 timesteps, 8 bits + delimiter)")
-    print(x[0].int())
+def demo(task_name, model_name):
+    task = get_task(task_name)
+    x, target, mask = task.batch(batch_size=2, min_len=3, max_len=3)  # short, so it fits on screen
+    # One row per timestep. Floats rather than ints: repeat copy feeds in a fractional scalar.
+    torch.set_printoptions(precision=2, sci_mode=False, linewidth=120)
+    print("input x:", tuple(x.shape), f"= (batch, timesteps, {task.INPUT_SIZE} input channels)")
+    print(x[0])
 
-    model = build_model(model_name)
+    model = build_model(model_name, task.INPUT_SIZE, task.OUTPUT_SIZE)
     print(f"{model_name}: {model.num_parameters():,} parameters")
     logits = model(x)
-    print("output logits:", tuple(logits.shape), "= (batch, timesteps, 8 bits)")
+    print("output logits:", tuple(logits.shape), f"= (batch, timesteps, {task.OUTPUT_SIZE} output channels)")
 
-    length = target.shape[1]
-    print("prediction on the recall steps (untrained, so random):")
-    print((logits[0, length + 1:] > 0).int())
+    print(f"prediction on the {int(mask[0].sum())} scored steps (untrained, so random):")
+    print((logits[0][mask[0]] > 0).int())
     print("target:")
-    print(target[0].int())
+    print(target[0][mask[0]].int())
 
 
-def draw_every_figure():
+def draw_every_figure(task_name):
     """Redraw whatever the saved checkpoints allow. Safe to call while training is running."""
     os.makedirs("figures", exist_ok=True)
+    generalisation = task_plot(task_name, "plot_generalisation")
+    memory_use = task_plot(task_name, "plot_memory_use")
     for model in MODELS:
-        config = TrainConfig(model=model)
+        config = TrainConfig(model=model, task=task_name)
         if not os.path.exists(config.checkpoint_path):
             continue
-        plot_learning_curve(config.log_path, f"figures/{model}_learning_curve.png", label=model)
-        plot_generalisation(model, config.checkpoint_path, f"figures/{model}_generalisation.png")
-        if model.startswith("ntm"):
+        prefix = f"figures/{task_name}_{model}"
+        plot_learning_curve(config.log_path, f"{prefix}_learning_curve.png", label=model)
+        if generalisation:
+            generalisation(model, config.checkpoint_path, f"{prefix}_generalisation.png")
+        if memory_use and model.startswith("ntm"):
             for length in (20, 40):
-                plot_memory_use(model, config.checkpoint_path, f"figures/{model}_memory_length{length}.png", length)
-    plot_all_learning_curves({m: TrainConfig(model=m).log_path for m in MODELS}, "figures/learning_curves.png")
+                memory_use(model, config.checkpoint_path, f"{prefix}_memory_length{length}.png", length)
+    logs = {model: TrainConfig(model=model, task=task_name).log_path for model in MODELS}
+    plot_all_learning_curves(logs, f"figures/{task_name}_learning_curves.png")
 
 
-def train_all(sequences, batch_size, refresh, seed=TrainConfig.seed):
+def train_all(task_name, sequences, batch_size, refresh, seed=TrainConfig.seed):
     """Train every model at once, redrawing the figures every `refresh` seconds.
 
     Each model writes its own log, checkpoint and figures, so nothing collides, and the figures
@@ -66,34 +77,36 @@ def train_all(sequences, batch_size, refresh, seed=TrainConfig.seed):
     running = {}
     threads_each = max(1, (os.cpu_count() or 4) // len(MODELS))  # the models run side by side
     for model in MODELS:
-        os.makedirs(os.path.dirname(TrainConfig(model=model).log_path), exist_ok=True)
-        log = open(f"results/copy/{model}/train.log", "w")
-        command = [sys.executable, __file__, "train", "--model", model, "--seed", str(seed),
-                   "--sequences", str(sequences), "--batch-size", str(batch_size),
-                   "--threads", str(threads_each)]
+        results = TrainConfig(model=model, task=task_name).results_path
+        os.makedirs(results, exist_ok=True)
+        log = open(f"{results}/train.log", "w")
+        command = [sys.executable, __file__, "train", "--model", model, "--task", task_name,
+                   "--seed", str(seed), "--sequences", str(sequences),
+                   "--batch-size", str(batch_size), "--threads", str(threads_each)]
         running[model] = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
                                           env={**os.environ, "PYTHONUNBUFFERED": "1"})
-        print(f"training {model}, logging to results/copy/{model}/train.log")
+        print(f"training {model}, logging to {results}/train.log")
 
     print(f"redrawing every figure every {refresh // 60} minutes; ctrl-c to stop")
     try:
         while any(process.poll() is None for process in running.values()):
             time.sleep(refresh)
-            draw_every_figure()
+            draw_every_figure(task_name)
             print(f"{time.strftime('%H:%M')} figures updated")
     except KeyboardInterrupt:
         for process in running.values():
             process.terminate()
-    draw_every_figure()
+    draw_every_figure(task_name)
     print("figures written to figures/")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="NTM and LSTM on the copy task")
+    parser = argparse.ArgumentParser(description="NTM and LSTM on the paper's tasks")
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ["demo", "train", "plot", "try", "memory", "compare", "all"]:
         command = commands.add_parser(name)
         command.add_argument("--model", choices=list(MODELS), default="lstm")
+        command.add_argument("--task", choices=list(TASKS), default="copy")
     commands.choices["train"].add_argument("--sequences", type=int, default=TrainConfig.total_sequences)
     commands.choices["train"].add_argument("--batch-size", type=int, default=TrainConfig.batch_size)
     commands.choices["train"].add_argument("--learning-rate", type=float)
@@ -110,22 +123,24 @@ def main():
     commands.choices["all"].add_argument("--refresh", type=int, default=900, help="seconds between figure redraws")
     args = parser.parse_args()
 
-    config = TrainConfig(model=args.model)
+    config = TrainConfig(model=args.model, task=args.task)
+    prefix = f"figures/{args.task}_{args.model}"
 
     if args.command == "all":
-        train_all(args.sequences, args.batch_size, args.refresh, args.seed)
+        train_all(args.task, args.sequences, args.batch_size, args.refresh, args.seed)
         return
 
     if args.command == "compare":
         os.makedirs("figures", exist_ok=True)
-        logs = {model: TrainConfig(model=model).log_path for model in MODELS}
-        plot_all_learning_curves(logs, "figures/learning_curves.png")
-        print("saved figures/learning_curves.png")
+        logs = {model: TrainConfig(model=model, task=args.task).log_path for model in MODELS}
+        out = f"figures/{args.task}_learning_curves.png"
+        plot_all_learning_curves(logs, out)
+        print(f"saved {out}")
         return
 
     if args.command == "demo":
         torch.manual_seed(TrainConfig.seed)
-        demo(args.model)
+        demo(args.task, args.model)
         return
 
     if args.command == "train":
@@ -140,29 +155,38 @@ def main():
         return
 
     if not os.path.exists(config.checkpoint_path):
-        print(f"Nothing saved yet: train {args.model} first, or wait for its first {config.log_every:,} sequences.")
+        print(f"Nothing saved yet: train {args.model} on {args.task} first, "
+              f"or wait for its first {config.log_every:,} sequences.")
         return
 
     os.makedirs("figures", exist_ok=True)
     if args.command == "plot":
-        plot_learning_curve(config.log_path, f"figures/{args.model}_learning_curve.png", label=args.model)
-        plot_generalisation(args.model, config.checkpoint_path, f"figures/{args.model}_generalisation.png")
-        print(f"saved figures/{args.model}_learning_curve.png and figures/{args.model}_generalisation.png")
+        plot_learning_curve(config.log_path, f"{prefix}_learning_curve.png", label=args.model)
+        print(f"saved {prefix}_learning_curve.png")
+        generalisation = task_plot(args.task, "plot_generalisation")
+        if generalisation:
+            generalisation(args.model, config.checkpoint_path, f"{prefix}_generalisation.png")
+            print(f"saved {prefix}_generalisation.png")
     elif args.command == "memory":
+        memory_use = task_plot(args.task, "plot_memory_use")
+        if not memory_use:
+            raise SystemExit(f"no memory figure for the {args.task} task yet")
         if not args.model.startswith("ntm"):
             raise SystemExit("memory plots need an NTM: --model ntm-ff or ntm-lstm")
-        out = f"figures/{args.model}_memory_length{args.length}.png"
-        plot_memory_use(args.model, config.checkpoint_path, out, args.length)
+        out = f"{prefix}_memory_length{args.length}.png"
+        memory_use(args.model, config.checkpoint_path, out, args.length)
         print(f"saved {out}")
     elif args.command == "try":
+        if args.task != "copy":
+            raise SystemExit("`try` is the copy task's own command: use --task copy")
         if args.random:
             target = torch.randint(0, 2, (1, args.random, 8)).float()
         elif args.vectors:
             target = parse_vectors(args.vectors)
         else:
             raise SystemExit("Give some 8-bit vectors (e.g. 10110010 01100101) or --random LENGTH")
-        try_sequence(args.model, config.checkpoint_path, target, f"figures/{args.model}_try.png")
-        print(f"saved figures/{args.model}_try.png")
+        try_sequence(args.model, config.checkpoint_path, target, f"{prefix}_try.png")
+        print(f"saved {prefix}_try.png")
 
 
 if __name__ == "__main__":

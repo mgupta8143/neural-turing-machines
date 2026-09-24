@@ -1,7 +1,6 @@
-"""Training the LSTM baseline on the copy task, with the settings from the paper."""
+"""Training a model on a task, with the settings from the paper."""
 
 import json
-import math
 import os
 import random
 import subprocess
@@ -9,16 +8,17 @@ import time
 from dataclasses import dataclass
 
 import torch
-import torch.nn.functional as F
 
+from src.graphs import CapturedStep
+from src.loss import masked_bce
 from src.models.build import build_model
-from src.tasks.copy.data import copy_batch
-from src.tasks.copy.graphs import CapturedStep
+from src.tasks.registry import get_task
 
 
 @dataclass
 class TrainConfig:
     model: str = "lstm"  # one of src.models.build.MODELS
+    task: str = "copy"  # one of src.tasks.registry.TASKS
 
     # From the paper: Section 4.6 and Tables 1-3
     total_sequences: int = 1_000_000  # Figure 3's x-axis runs to 1000 thousand sequences
@@ -44,16 +44,20 @@ class TrainConfig:
     log_every: int = 1_000  # sequences between log lines
 
     @property
+    def results_path(self):
+        return f"results/{self.task}/{self.model}"
+
+    @property
     def run_path(self):
-        return f"results/copy/{self.model}/run.json"
+        return f"{self.results_path}/run.json"
 
     @property
     def log_path(self):
-        return f"results/copy/{self.model}/log.csv"
+        return f"{self.results_path}/log.csv"
 
     @property
     def checkpoint_path(self):
-        return f"results/copy/{self.model}/model.pt"
+        return f"{self.results_path}/model.pt"
 
 
 def clip(parameters, config: TrainConfig):
@@ -85,6 +89,7 @@ def record_run(config: TrainConfig, device: str, parameters: int):
         commit = "unknown"
     details = {
         "model": config.model,
+        "task": config.task,
         "seed": config.seed,
         "batch_size": config.batch_size,
         "learning_rate": config.learning_rate,
@@ -107,13 +112,14 @@ def train(config: TrainConfig):
     if config.threads:
         torch.set_num_threads(config.threads)
 
-    # Seeding both generators makes a run repeatable: copy_batch draws its length with `random`
+    # Seeding both generators makes a run repeatable: a task draws its lengths with `random`
     # and its bits with torch, and the model's initial weights come from torch as well.
     random.seed(config.seed)
     torch.manual_seed(config.seed)
 
+    task = get_task(config.task)
     device = choose_device(config)
-    model = build_model(config.model).to(device)
+    model = build_model(config.model, task.INPUT_SIZE, task.OUTPUT_SIZE).to(device)
     graphed = device == "cuda" and config.cuda_graphs
     # Compile a copy for speed, but keep `model` for checkpoints: a compiled module renames its
     # parameters, which would make the saved file unloadable by `plot` and `try`.
@@ -126,12 +132,12 @@ def train(config: TrainConfig):
     captured = None
     if graphed:
         saved = [p.detach().clone() for p in model.parameters()]
-        captured = CapturedStep(model, optimizer, config.clip_norm)
+        captured = CapturedStep(model, optimizer, config.clip_norm, task, config.batch_size)
         captured.reset(saved, optimizer.state)  # undo what capture's warm-up did to the weights
 
     steps = config.total_sequences // config.batch_size
     log_every_steps = max(1, config.log_every // config.batch_size)
-    print(f"training {config.model} on {device}: {model.num_parameters():,} parameters, "
+    print(f"training {config.model} on {config.task}, {device}: {model.num_parameters():,} parameters, "
           f"{steps:,} steps, batch {config.batch_size}, lr {config.learning_rate}, seed {config.seed}"
           f"{', cuda graphs' if graphed else ''}")
 
@@ -142,25 +148,23 @@ def train(config: TrainConfig):
     start = time.time()
 
     for step in range(1, steps + 1):
-        x, target = copy_batch(config.batch_size)
-        x, target = x.to(device), target.to(device)
-        length = target.shape[1]
+        x, target, mask = task.batch(config.batch_size)
+        x, target, mask = x.to(device), target.to(device), mask.to(device)
 
         if captured:
-            captured.run(x, target)  # one launch: forward, backward, clipping and the update
+            captured.run(x, target, mask)  # one launch: forward, backward, clipping and the update
         else:
-            logits = step_model(x)[:, length + 1:]  # only the recall steps are scored
-            loss = F.binary_cross_entropy_with_logits(logits, target)
+            loss, cost = masked_bce(step_model(x), target, mask)
 
             optimizer.zero_grad()
             loss.backward()
             clip(model.parameters(), config)
             optimizer.step()
 
-            # The paper's metric: the whole sequence's cost in bits (mean loss per bit × number of
-            # bits, in log base 2). Kept on the device and only read at log time: .item() every
-            # step forces the GPU to finish and wait, which dominates when steps are this small.
-            costs.append(loss.detach() * (target[0].numel() / math.log(2)))
+            # The paper's metric, the whole sequence's cost in bits, kept on the device and only
+            # read at log time: .item() every step forces the GPU to finish and wait, which
+            # dominates when steps are this small.
+            costs.append(cost)
 
         if step % log_every_steps == 0:
             sequences = step * config.batch_size

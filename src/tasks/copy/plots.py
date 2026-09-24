@@ -1,107 +1,21 @@
-"""The paper's copy-task figures, LSTM only.
+"""The copy task's own figures.
 
-Figure 3: learning curve, cost per sequence (bits) against sequences seen.
-Figure 5: targets and outputs for test lengths longer than the training range of 1-20.
+Figure 4/5: targets and outputs for test lengths longer than the training range of 1-20.
+Figure 6: what the read and write heads did, timestep by timestep.
+
+The learning curves, which look the same for every task, are in src/plots.py.
 """
-
-import csv
-import os
 
 import matplotlib.pyplot as plt
 import torch
 from matplotlib.gridspec import GridSpec
 
-from src.models.build import build_model
-from src.tasks.copy.data import copy_batch
-
-
-def load_model(model_name: str, checkpoint_path: str):
-    model = build_model(model_name)
-    model.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
-    model.eval()
-    return model
-
-
-def plot_learning_curve(log_path: str, out_path: str, label: str = "LSTM", chunk: int = 0):
-    with open(log_path) as f:
-        rows = list(csv.DictReader(f))
-
-    # Average the log into chunks, since single log lines are noisy: every batch draws a random
-    # sequence length, and longer sequences cost more bits. The paper's dots are about 10k
-    # sequences apart, but a chunk that size hides everything in a short run, so aim for ~50
-    # points and cap it at 10k.
-    if not chunk:
-        chunk = min(10_000, max(1_000, int(rows[-1]["sequences"]) // 50))
-    chunks = {}
-    for row in rows:
-        end = -(-int(row["sequences"]) // chunk) * chunk  # round up to the chunk boundary
-        chunks.setdefault(end, []).append(float(row["cost_bits"]))
-    thousands = [end / 1000 for end in chunks]
-    cost = [sum(values) / len(values) for values in chunks.values()]
-
-    fig, (full, paper) = plt.subplots(1, 2, figsize=(12, 4))
-    for ax in (full, paper):
-        ax.plot(thousands, cost, "o-", color="#1f3f99", markersize=3, linewidth=1, label=label)
-        ax.set_xlim(0, max(1000, thousands[-1]))
-        ax.set_xlabel("sequence number (thousands)")
-        ax.set_ylabel("cost per sequence (bits)")
-        ax.legend(frameon=False)
-    full.set_ylim(0, max(cost) * 1.05)
-    full.set_title("Whole run")
-    paper.set_ylim(0, 10)
-    paper.set_title("Same scale as the paper's Figure 3")
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
-    plt.close(fig)
-
-
-PAPER_STYLE = {  # colours and markers of the paper's Figure 3
-    "lstm": ("LSTM", "#1f3f99", "o"),
-    "ntm-lstm": ("NTM with LSTM Controller", "#1f8a3f", "s"),
-    "ntm-ff": ("NTM with Feedforward Controller", "#c81e1e", "^"),
-}
-
-
-def plot_all_learning_curves(log_paths: dict, out_path: str, chunk: int = 10_000):
-    """The paper's Figure 3: every model on one pair of axes."""
-    fig, (full, paper) = plt.subplots(1, 2, figsize=(12, 4.5))
-    longest = 1
-
-    for model, log_path in log_paths.items():
-        if not os.path.exists(log_path):
-            continue
-        with open(log_path) as f:
-            rows = list(csv.DictReader(f))
-        if not rows:
-            continue
-        chunks = {}
-        for row in rows:
-            end = -(-int(row["sequences"]) // chunk) * chunk
-            chunks.setdefault(end, []).append(float(row["cost_bits"]))
-        thousands = [end / 1000 for end in chunks]
-        cost = [sum(values) / len(values) for values in chunks.values()]
-        longest = max(longest, thousands[-1])
-
-        label, colour, marker = PAPER_STYLE[model]
-        for ax in (full, paper):
-            ax.plot(thousands, cost, marker=marker, color=colour, markersize=3.5, linewidth=1, label=label)
-
-    for ax in (full, paper):
-        ax.set_xlim(0, max(1000, longest))
-        ax.set_xlabel("sequence number (thousands)")
-        ax.set_ylabel("cost per sequence (bits)")
-        ax.legend(frameon=False, fontsize=9)
-    full.set_ylim(bottom=0)
-    full.set_title("Whole run")
-    paper.set_ylim(0, 10)
-    paper.set_title("Same scale as the paper's Figure 3")
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
-    plt.close(fig)
+from src.models.build import load_model
+from src.tasks.copy import data as copy_data
 
 
 def plot_generalisation(model_name: str, checkpoint_path: str, out_path: str):
-    model = load_model(model_name, checkpoint_path)
+    model = load_model(model_name, checkpoint_path, copy_data)
 
     # The page is a grid with one column per timestep, so each panel's width matches its length.
     # Top: lengths 10, 20, 30, 50 side by side. Bottom: length 120 across the whole width.
@@ -117,12 +31,12 @@ def plot_generalisation(model_name: str, checkpoint_path: str, out_path: str):
     panels.append((120, 3, slice(0, 120)))
 
     for length, row, columns in panels:
-        x, target = copy_batch(1, length, length)
+        x, target, mask = copy_data.batch(1, length, length)
         with torch.no_grad():
-            outputs = torch.sigmoid(model(x)[0, length + 1:])
+            outputs = torch.sigmoid(model(x)[0][mask[0]])  # the recall steps only
 
         # Transposed so time runs left to right and the 8 bits run top to bottom
-        for offset, (label, image) in enumerate([("Targets", target[0].T), ("Outputs", outputs.T)]):
+        for offset, (label, image) in enumerate([("Targets", target[0][mask[0]].T), ("Outputs", outputs.T)]):
             ax = fig.add_subplot(grid[row + offset, columns])
             im = ax.imshow(image, cmap="jet", vmin=0, vmax=1, aspect="auto", interpolation="nearest")
             ax.set_xticks([])
@@ -144,8 +58,8 @@ def plot_memory_use(model_name: str, checkpoint_path: str, out_path: str, length
     A network that has learned to copy shows a diagonal stripe in both weightings: the write head
     steps along memory while reading the input, and the read head retraces the same locations.
     """
-    model = load_model(model_name, checkpoint_path)
-    x, _ = copy_batch(1, length, length)
+    model = load_model(model_name, checkpoint_path, copy_data)
+    x, _, _ = copy_data.batch(1, length, length)
     trace = {}
     with torch.no_grad():
         outputs = torch.sigmoid(model(x, trace=trace)[0])
