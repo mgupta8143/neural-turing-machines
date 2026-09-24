@@ -22,6 +22,11 @@ SETTINGS = {
         "ntm-lstm": dict(heads=1, controller_size=100, learning_rate=1e-4),  # Table 2
         "lstm": dict(hidden_size=256, num_layers=3, learning_rate=3e-5),  # Table 3
     },
+    "repeat-copy": {
+        "ntm-ff": dict(heads=1, controller_size=100, learning_rate=1e-4),  # Table 1
+        "ntm-lstm": dict(heads=1, controller_size=100, learning_rate=1e-4),  # Table 2
+        "lstm": dict(hidden_size=512, num_layers=3, learning_rate=3e-5),  # Table 3: 3 x 512 here
+    },
 }
 
 
