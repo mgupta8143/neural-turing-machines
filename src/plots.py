@@ -89,7 +89,9 @@ def plot_all_learning_curves(log_paths: dict, out_path: str, chunk: int = 10_000
             ax.plot(thousands, cost, marker=marker, color=colour, markersize=3.5, linewidth=1, label=label)
 
     for ax in (full, paper):
-        ax.set_xlim(0, max(1000, longest))
+        # The paper's Figure 3 runs to 1000k because that is how long it trained; ours ends where
+        # the run ends, so the curve fills the axis instead of hugging the left edge.
+        ax.set_xlim(0, longest)
         ax.set_xlabel("sequence number (thousands)")
         ax.set_ylabel("cost per sequence (bits)")
         ax.legend(frameon=False, fontsize=9)
