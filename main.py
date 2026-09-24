@@ -22,8 +22,8 @@ import time
 
 import torch
 
-from src.models.build import LEARNING_RATES, MODELS, build_model
-from src.plots import plot_all_learning_curves, plot_learning_curve, task_plot
+from src.models.build import MODELS, build_model
+from src.plots import plot_all_learning_curves, plot_learning_curve, plot_memory_use, task_plot
 from src.tasks.copy.try_it import parse_vectors, try_sequence
 from src.tasks.registry import TASKS, get_task
 from src.train import TrainConfig, train
@@ -37,7 +37,7 @@ def demo(task_name, model_name):
     print("input x:", tuple(x.shape), f"= (batch, timesteps, {task.INPUT_SIZE} input channels)")
     print(x[0])
 
-    model = build_model(model_name, task.INPUT_SIZE, task.OUTPUT_SIZE)
+    model = build_model(model_name, task.INPUT_SIZE, task.OUTPUT_SIZE, task_name)
     print(f"{model_name}: {model.num_parameters():,} parameters")
     logits = model(x)
     print("output logits:", tuple(logits.shape), f"= (batch, timesteps, {task.OUTPUT_SIZE} output channels)")
@@ -61,9 +61,12 @@ def draw_every_figure(task_name):
         plot_learning_curve(config.log_path, f"{prefix}_learning_curve.png", label=model)
         if generalisation:
             generalisation(model, config.checkpoint_path, f"{prefix}_generalisation.png")
-        if memory_use and model.startswith("ntm"):
-            for length in (20, 40):
-                memory_use(model, config.checkpoint_path, f"{prefix}_memory_length{length}.png", length)
+        if model.startswith("ntm"):
+            if memory_use:  # copy pins the sequence length so the diagonal matches the paper
+                for length in (20, 40):
+                    memory_use(model, config.checkpoint_path, f"{prefix}_memory_length{length}.png", length)
+            else:  # every other task gets the generic version on one of its own examples
+                plot_memory_use(task_name, model, config.checkpoint_path, f"{prefix}_memory.png")
     logs = {model: TrainConfig(model=model, task=task_name).log_path for model in MODELS}
     plot_all_learning_curves(logs, f"figures/{task_name}_learning_curves.png")
 
@@ -146,7 +149,7 @@ def main():
     if args.command == "train":
         config.total_sequences = args.sequences
         config.batch_size = args.batch_size
-        config.learning_rate = args.learning_rate or LEARNING_RATES[args.model]
+        config.learning_rate = args.learning_rate or 0.0
         config.seed = args.seed
         config.device = args.device
         config.compile = args.compile
@@ -168,13 +171,15 @@ def main():
             generalisation(args.model, config.checkpoint_path, f"{prefix}_generalisation.png")
             print(f"saved {prefix}_generalisation.png")
     elif args.command == "memory":
-        memory_use = task_plot(args.task, "plot_memory_use")
-        if not memory_use:
-            raise SystemExit(f"no memory figure for the {args.task} task yet")
         if not args.model.startswith("ntm"):
             raise SystemExit("memory plots need an NTM: --model ntm-ff or ntm-lstm")
-        out = f"{prefix}_memory_length{args.length}.png"
-        memory_use(args.model, config.checkpoint_path, out, args.length)
+        memory_use = task_plot(args.task, "plot_memory_use")
+        if memory_use:  # copy pins the sequence length so the diagonal matches the paper's figure
+            out = f"{prefix}_memory_length{args.length}.png"
+            memory_use(args.model, config.checkpoint_path, out, args.length)
+        else:
+            out = f"{prefix}_memory.png"
+            plot_memory_use(args.task, args.model, config.checkpoint_path, out)
         print(f"saved {out}")
     elif args.command == "try":
         if args.task != "copy":

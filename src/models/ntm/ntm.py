@@ -20,6 +20,7 @@ class NTM(nn.Module):
         output_size: int = 8,
         controller: str = "feedforward",
         controller_size: int = 100,
+        controller_layers: int = 1,
         memory_locations: int = 128,
         memory_width: int = 20,
         num_read_heads: int = 1,
@@ -31,8 +32,10 @@ class NTM(nn.Module):
 
         # The controller sees the external input plus what the read heads found last timestep
         controller_input = input_size + num_read_heads * memory_width
-        controller_class = {"feedforward": FeedForwardController, "lstm": LSTMController}[controller]
-        self.controller = controller_class(controller_input, controller_size)
+        if controller == "feedforward":
+            self.controller = FeedForwardController(controller_input, controller_size)
+        else:
+            self.controller = LSTMController(controller_input, controller_size, controller_layers)
 
         self.read_heads = nn.ModuleList(ReadHead(controller_size, memory_width) for _ in range(num_read_heads))
         self.write_heads = nn.ModuleList(WriteHead(controller_size, memory_width) for _ in range(num_write_heads))

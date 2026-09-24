@@ -26,7 +26,6 @@ def train_on_gpu(model: str, task: str, sequences: int, seed: int):
     import sys
 
     sys.path.insert(0, "/root")
-    from src.models.build import LEARNING_RATES
     from src.train import TrainConfig, train
 
     config = TrainConfig(
@@ -34,7 +33,6 @@ def train_on_gpu(model: str, task: str, sequences: int, seed: int):
         task=task,
         total_sequences=sequences,
         seed=seed,
-        learning_rate=LEARNING_RATES[model],
         device="cuda",
     )
     train(config)

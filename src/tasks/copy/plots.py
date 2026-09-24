@@ -15,7 +15,7 @@ from src.tasks.copy import data as copy_data
 
 
 def plot_generalisation(model_name: str, checkpoint_path: str, out_path: str):
-    model = load_model(model_name, checkpoint_path, copy_data)
+    model = load_model(model_name, checkpoint_path, copy_data, "copy")
 
     # The page is a grid with one column per timestep, so each panel's width matches its length.
     # Top: lengths 10, 20, 30, 50 side by side. Bottom: length 120 across the whole width.
@@ -58,7 +58,7 @@ def plot_memory_use(model_name: str, checkpoint_path: str, out_path: str, length
     A network that has learned to copy shows a diagonal stripe in both weightings: the write head
     steps along memory while reading the input, and the read head retraces the same locations.
     """
-    model = load_model(model_name, checkpoint_path, copy_data)
+    model = load_model(model_name, checkpoint_path, copy_data, "copy")
     x, _, _ = copy_data.batch(1, length, length)
     trace = {}
     with torch.no_grad():

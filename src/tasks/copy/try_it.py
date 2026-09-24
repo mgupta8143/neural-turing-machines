@@ -16,7 +16,7 @@ def parse_vectors(vectors: list[str]) -> torch.Tensor:
 
 
 def try_sequence(model_name: str, checkpoint_path: str, target: torch.Tensor, out_path: str):
-    model = load_model(model_name, checkpoint_path, copy_data)
+    model = load_model(model_name, checkpoint_path, copy_data, "copy")
     length = target.shape[1]
     x = copy_data.make_input(target)
     with torch.no_grad():

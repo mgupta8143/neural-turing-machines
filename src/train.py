@@ -11,7 +11,7 @@ import torch
 
 from src.graphs import CapturedStep
 from src.loss import masked_bce
-from src.models.build import build_model
+from src.models.build import build_model, learning_rate as paper_learning_rate
 from src.tasks.registry import get_task
 
 
@@ -22,7 +22,7 @@ class TrainConfig:
 
     # From the paper: Section 4.6 and Tables 1-3
     total_sequences: int = 1_000_000  # Figure 3's x-axis runs to 1000 thousand sequences
-    learning_rate: float = 3e-5  # per model; see LEARNING_RATES
+    learning_rate: float = 0.0  # 0 means take the paper's rate for this task and model
     momentum: float = 0.9
     clip_value: float = 10.0
     clip_norm: float = 10.0  # NTM gradients spike; clipping the whole gradient's norm is steadier
@@ -118,8 +118,11 @@ def train(config: TrainConfig):
     torch.manual_seed(config.seed)
 
     task = get_task(config.task)
+    if not config.learning_rate:
+        config.learning_rate = paper_learning_rate(config.task, config.model)
+
     device = choose_device(config)
-    model = build_model(config.model, task.INPUT_SIZE, task.OUTPUT_SIZE).to(device)
+    model = build_model(config.model, task.INPUT_SIZE, task.OUTPUT_SIZE, config.task).to(device)
     graphed = device == "cuda" and config.cuda_graphs
     # Compile a copy for speed, but keep `model` for checkpoints: a compiled module renames its
     # parameters, which would make the saved file unloadable by `plot` and `try`.

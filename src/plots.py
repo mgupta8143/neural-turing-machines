@@ -100,3 +100,57 @@ def plot_all_learning_curves(log_paths: dict, out_path: str, chunk: int = 10_000
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
+
+
+def plot_memory_use(task_name: str, model_name: str, checkpoint_path: str, out_path: str):
+    """Figure 6 of the paper, for any task: what the heads did, timestep by timestep.
+
+    Left column: the input, the vectors written to memory, and the write weightings. Right column:
+    the output, the vectors read back, and the read weightings. A model that has learned to use
+    memory shows sharp weightings that move over time; one that has not shows a smear.
+
+    The copy task overrides this with its own version, which pins the sequence length so the
+    diagonal is easy to compare against the paper's figure.
+    """
+    import torch
+
+    from src.models.build import load_model
+    from src.tasks.registry import get_task
+
+    task = get_task(task_name)
+    model = load_model(model_name, checkpoint_path, task, task_name)
+    x, _, _ = task.batch(1)
+    trace = {}
+    with torch.no_grad():
+        outputs = torch.sigmoid(model(x, trace=trace)[0])
+
+    write_w = torch.stack(trace["write_weightings"], dim=1)
+    read_w = torch.stack(trace["read_weightings"], dim=1)
+    adds = torch.stack(trace["adds"], dim=1)
+    reads = torch.stack(trace["reads"], dim=1)
+
+    used = (write_w.max(dim=1).values + read_w.max(dim=1).values) > 0.01
+    rows = used.nonzero().flatten()
+    window = slice(max(0, int(rows.min()) - 2), int(rows.max()) + 3) if len(rows) else slice(0, 40)
+
+    fig, axes = plt.subplots(3, 2, figsize=(11, 7), gridspec_kw={"height_ratios": [1, 1.3, 2.6]})
+    panels = [
+        ("Inputs", x[0].T, "gray", axes[0, 0]),
+        ("Outputs", outputs.T, "gray", axes[0, 1]),
+        ("Adds", adds, "jet", axes[1, 0]),
+        ("Reads", reads, "jet", axes[1, 1]),
+        ("Write weightings", write_w[window], "gray", axes[2, 0]),
+        ("Read weightings", read_w[window], "gray", axes[2, 1]),
+    ]
+    for title, image, cmap, ax in panels:
+        ax.imshow(image, cmap=cmap, aspect="auto", interpolation="nearest", vmin=0, vmax=1)
+        ax.set_title(title, fontsize=10)
+        ax.set_xticks([])
+        ax.set_yticks([])
+    axes[2, 0].set_ylabel("Location")
+    for ax in (axes[2, 0], axes[2, 1]):
+        ax.set_xlabel("Time \u2192")
+    fig.suptitle(f"{task_name}: {model_name} memory use", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
