@@ -18,10 +18,10 @@ from src.loss import masked_bce
 class CapturedStep:
     """One captured training step per timestep count, plus the running cost in bits."""
 
-    def __init__(self, model, optimizer, clip_norm, task, batch_size=1):
+    def __init__(self, model, optimizer, clip, task, batch_size=1):
         self.model = model
         self.optimizer = optimizer
-        self.clip_norm = clip_norm
+        self.clip = clip  # the same callable the eager path uses, so both clip identically
         self.parameters = list(model.parameters())
         device = self.parameters[0].device
 
@@ -33,6 +33,12 @@ class CapturedStep:
         self.graphs, self.buffers = {}, {}
         for timesteps in task.TIMESTEPS:
             self._capture(timesteps, task, batch_size, device)
+        # Capture warms up by running the step three times per timestep count. Those runs see
+        # all-zero buffers, so they add nothing to the cost, but they do count sequences - which
+        # would divide the first log line's mean by a denominator inflated by 3 x len(TIMESTEPS).
+        self.cost_total.zero_()
+        self.cost_squared.zero_()
+        self.sequences.zero_()
 
     def _capture(self, timesteps, task, batch_size, device):
         x = torch.zeros(batch_size, timesteps, task.INPUT_SIZE, device=device)
@@ -46,9 +52,10 @@ class CapturedStep:
                 if parameter.grad is not None:
                     parameter.grad.zero_()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.parameters, self.clip_norm)
+            self.clip(self.parameters)
             self.optimizer.step()
             self.cost_total += cost
+            self.cost_squared += cost * cost
             self.sequences += 1
 
         # Warm up on a side stream, which CUDA requires before capturing
@@ -99,6 +106,7 @@ class CapturedStep:
         """
         count = self.sequences.clamp(min=1)
         average = (self.cost_total / count).item()
+        # population variance, E[x^2] - E[x]^2; the max() absorbs float cancellation near zero
         spread = max(0.0, (self.cost_squared / count).item() - average**2) ** 0.5
         self.cost_total.zero_()
         self.cost_squared.zero_()

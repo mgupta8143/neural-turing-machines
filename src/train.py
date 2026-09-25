@@ -159,7 +159,7 @@ def train(config: TrainConfig):
     captured = None
     if graphed:
         saved = [p.detach().clone() for p in model.parameters()]
-        captured = CapturedStep(model, optimizer, config.clip_norm, task, config.batch_size)
+        captured = CapturedStep(model, optimizer, lambda p: clip(p, config), task, config.batch_size)
         captured.reset(saved, optimizer.state)  # undo what capture's warm-up did to the weights
 
     steps = config.total_sequences // config.batch_size
