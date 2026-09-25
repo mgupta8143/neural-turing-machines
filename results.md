@@ -142,8 +142,8 @@ The ordering matches the paper's Figure 7: the LSTM-controller NTM first, the fe
 next, the LSTM baseline last, by roughly an order of magnitude in sequences. Two differences from
 the paper. Our LSTM baseline does eventually solve the task, at about 400,000 sequences, where
 the paper's is still well above zero at the end of its run. And our feed-forward NTM does not
-fully settle: it reaches about 0.7 bits and stays there, hitting exact zero on most sequences but
-losing a whole copy on a minority of them.
+fully settle: it was still improving when the run ended, at about 0.2 bits, hitting exact zero on
+most sequences and losing a whole copy on a minority of them.
 
 ## Generalisation (paper Figure 9)
 
@@ -196,24 +196,42 @@ output phase, because no training sequence is long enough for the write head to 
 head then sweeps the same block of locations once per repeat, snapping back to the first location
 each time the copy ends.*
 
-## Two additions the paper does not describe
+## Why this needed an addition the paper does not describe
 
-Repeat copy did not train at all from the same initialisation the copy task uses; both NTMs sat
-near chance for 100,000 sequences. Two changes fixed it, and **both are ours, not the paper's**:
+Repeat copy did not train at all from the initialisation the copy task uses: both NTMs sat near
+chance for 100,000 sequences. We added two things to get it moving, and only one of them turned
+out to deserve a place.
 
-**The initial weighting is focused, not random.** Instead of drawing the starting weighting from
-a normal, we set it to put all its mass on location 0 (logit 5.0 there, 0 elsewhere). The heads
-then start at a definite place in memory and the shift mechanism has something to step from.
+**What goes wrong is the sequence length, not the repeats.** Holding the model, the loop and the
+seed fixed and changing only the training length range on the *copy* task:
 
-**The write gate starts closed.** We bias the interpolation gate to -2.0, so on the first updates
-each head leans toward reusing its previous weighting rather than jumping to a content match.
-That makes "advance one location per timestep" the easy thing to learn first, and content
-addressing something the model adds later.
+| lengths trained on | cost at 10,000 sequences | converged |
+|---|---|---|
+| 1 to 20 | 0.01 bits | yes, by 7,500 |
+| 1 to 15 | 0.69 | yes, by 10,000 |
+| **1 to 10** | **27.0, 29.8, 30.5** (three seeds) | **no** |
+| fixed length 10 | 61.5 | no |
 
-Both are the sort of initialisation detail the paper does not report, and both are load-bearing
-here in a way they are not on the plain copy task. They are also a plausible contributor to the
-generalisation gap: a prior that makes location-stepping cheap may be part of why the write head
-never learns to stop stepping.
+Copy trains on lengths 1 to 20 and bootstraps itself. Repeat copy trains on 1 to 10, below the
+threshold, so it needs help that copy never does. A degenerate range is worse still than a narrow
+one, so this is about the variety of lengths the head sees early, not simply about short
+sequences.
+
+**The initial weighting is focused, not random** - ours, not the paper's. The starting weighting
+puts its mass on location 0 instead of being drawn from a normal, so the heads begin somewhere
+definite and the shift mechanism has something to step from. On copy restricted to lengths 1 to
+10 this alone converges in 6,000 sequences and then copies length 120, twelve times the training
+range, at zero bit error.
+
+**The write gate does not start closed, and biasing it was a mistake.** We used to set the
+interpolation gate's bias to -2.0. On the same short-copy bench, adding it to the focused start
+makes convergence slower - 10,000 sequences against 6,000 - and takes generalisation from 0%
+wrong at length 120 to 49%, which is chance. On its own it does not learn the task at all. It
+also never moved during training: after 446,000 sequences the output-phase gate read 0.083,
+against sigmoid(-2) = 0.119 at initialisation. It is gone.
+
+That bias is the best explanation we have for the generalisation gap above, and it was our own
+doing rather than anything the paper specifies.
 
 ## Reproducing
 
