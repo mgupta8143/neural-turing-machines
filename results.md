@@ -34,7 +34,10 @@ Trained only on lengths 1 to 20, tested well beyond. Percentage of output bits w
 | NTM, feed-forward | 0.0% | 0.0% | **0.0%** | **0.0%** | **0.0%** | **0.0%** |
 | NTM, LSTM controller | 0.0% | 0.0% | **0.0%** | **0.0%** | **0.0%** | **0.0%** |
 
-Both NTMs copy perfectly at six times their training length. The LSTM degrades exactly as the
+Both NTMs copy perfectly at six times their training length - better, at length 120, than the
+paper's own network, whose Figure 4 caption reports *"a few more local errors and one global
+error... a single vector is duplicated, pushing all subsequent vectors one step back."* Ours
+makes neither mistake. The LSTM degrades exactly as the
 paper describes: fine to 20, then the accurate prefix shrinks as the sequence grows, until at 120
 it is wrong on half the bits, which is chance.
 
@@ -166,7 +169,14 @@ that keeps copying correctly well past the trained range and fails only on the e
 it never learns to place. Ours copies correctly for roughly the first 150 timesteps of any test
 sequence and then degrades, on both axes equally.
 
-That symmetry is the clue: 150 timesteps is close to the 128 locations in memory, and the
+That symmetry is the clue, and the paper names the mechanism itself. Footnote 2, on the copy
+task's own limits: *"The limiting factor was the size of the memory (128 locations), after which
+the cyclical shifts wrapped around and previous writes were overwritten."* So this failure is
+not one we invented - it is the same wall Graves et al. hit. What differs is that their copy
+network only writes during the input phase, so it reaches length 120 before wrapping, whereas
+ours keeps writing all through a repeat copy output phase and wraps far sooner.
+
+150 timesteps is close to the 128 locations in memory, and the
 degradation does not care whether the extra timesteps came from a longer sequence or from more
 repeats. Tracing the heads confirms it. The write head does not stop when the input ends - it
 keeps stepping forward one location per timestep through the whole output phase. Inside the
