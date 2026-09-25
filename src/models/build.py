@@ -22,6 +22,12 @@ SETTINGS = {
         "ntm-lstm": dict(heads=1, controller_size=100, learning_rate=1e-4),  # Table 2
         "lstm": dict(hidden_size=256, num_layers=3, learning_rate=3e-5),  # Table 3
     },
+    "priority-sort": {
+        "ntm-ff": dict(heads=8, controller_size=512, learning_rate=3e-5),  # Table 1
+        # Table 2's "2 x 100" is two stacked layers of 100 units
+        "ntm-lstm": dict(heads=5, controller_size=100, controller_layers=2, learning_rate=3e-5),
+        "lstm": dict(hidden_size=128, num_layers=3, learning_rate=3e-5),  # Table 3
+    },
 }
 
 
