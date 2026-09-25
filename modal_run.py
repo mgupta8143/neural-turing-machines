@@ -1,7 +1,6 @@
 """Train on a Modal GPU and bring the results back.
 
     uv run --with modal modal run modal_run.py --model lstm
-    uv run --with modal modal run modal_run.py --model ntm-ff --task repeat-copy
 
 Each step replays as a single CUDA graph, which is what makes a GPU worth using here: eager, the
 NTM is several times slower on a GPU than on a laptop CPU, because it launches a few hundred tiny

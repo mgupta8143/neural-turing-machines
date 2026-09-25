@@ -2,7 +2,6 @@
 
     uv run main.py demo                        run one batch through an untrained model
     uv run main.py train --model ntm-ff        train (also: lstm, ntm-lstm)
-    uv run main.py train --task repeat-copy    train on another task (also: copy)
     uv run main.py plot --model ntm-ff         draw Figures 3 and 5 into figures/
     uv run main.py try 10110010 01100101 ...   copy your own 8-bit vectors
     uv run main.py try --random 30             or a random sequence of that length
