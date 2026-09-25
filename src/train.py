@@ -12,6 +12,7 @@ import torch
 from src.graphs import CapturedStep
 from src.loss import masked_bce
 from src.models.build import build_model, learning_rate as paper_learning_rate
+from src.probe import probe
 from src.tasks.registry import get_task
 
 
@@ -49,6 +50,10 @@ class TrainConfig:
     threads: int = 4
 
     log_every: int = 1_000  # sequences between log lines
+    # Sequences between diagnostics rows. These cost three forward passes, so they are rare, but
+    # they are the only record of whether what the model learned will survive a longer sequence:
+    # see src/probe.py. Set to 0 to skip them.
+    probe_every: int = 10_000
 
     @property
     def results_path(self):
@@ -61,6 +66,10 @@ class TrainConfig:
     @property
     def log_path(self):
         return f"{self.results_path}/log.csv"
+
+    @property
+    def diagnostics_path(self):
+        return f"{self.results_path}/diagnostics.csv"
 
     @property
     def best_checkpoint_path(self):
@@ -162,6 +171,7 @@ def train(config: TrainConfig):
     os.makedirs(os.path.dirname(config.log_path), exist_ok=True)
     record_run(config, device, model.num_parameters())
     log_lines = ["sequences,cost_bits,median_bits,spread_bits"]
+    diagnostics = []
     best_cost = float("inf")
     costs = []
     start = time.time()
@@ -204,6 +214,16 @@ def train(config: TrainConfig):
                 save_checkpoint(model, config.best_checkpoint_path)
             minutes = (time.time() - start) / 60
             print(f"sequences {sequences:>9,}  cost (bits) {cost:6.2f} +/- {spread:6.2f}  {minutes:5.1f} min")
+
+        if config.probe_every and step * config.batch_size % config.probe_every == 0:
+            row = probe(model, task, device)
+            if row:
+                if not diagnostics:
+                    diagnostics.append("sequences," + ",".join(row))
+                diagnostics.append(f"{step * config.batch_size}," +
+                                   ",".join(f"{v:.4f}" for v in row.values()))
+                save_log(diagnostics, config.diagnostics_path)
+                print("  probe  " + "  ".join(f"{k} {v:.3f}" for k, v in row.items()))
 
     return model
 

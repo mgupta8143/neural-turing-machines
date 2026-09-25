@@ -50,3 +50,13 @@ def make_target(vectors):
     mask = torch.zeros(batch_size, 2 * length + 1, dtype=torch.bool)
     mask[:, length + 1:] = True
     return target, mask
+
+
+def _case(length):
+    def build():
+        return batch(1, length, length)
+    return build
+
+
+# Logged during training by src/probe.py: the trained range, then well past it.
+PROBE_CASES = [("trained", _case(20)), ("long", _case(50)), ("longer", _case(120))]

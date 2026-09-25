@@ -23,14 +23,28 @@ SETTINGS = {
         "lstm": dict(hidden_size=256, num_layers=3, learning_rate=3e-5),  # Table 3
     },
     "repeat-copy": {
-        # initial_focus and gate_bias are ours, not the paper's. Repeat copy needs the head to
-        # sweep one block of memory R times, which means shifting; a diffuse starting weighting
-        # and a neutral interpolation gate push the controller towards content lookup instead.
-        # Measured over 4 seeds at 4,000 updates they are worth 20 bits (156 against 176).
+        # initial_focus is ours, not the paper's: repeat copy needs the head to sweep one block
+        # of memory R times, which means shifting, and a diffuse starting weighting is a poor
+        # thing to shift. It buys faster convergence and costs nothing measurable afterwards.
+        #
+        # We also used to bias the interpolation gate to -2.0 here, and that was a mistake. It
+        # held the gate at its starting value for the whole run (0.083 after 446,000 sequences,
+        # against sigmoid(-2) = 0.119 at init), which left the write head a pure shift register:
+        # sharp weighting, full-strength erase, one location per timestep, for every timestep of
+        # the output phase. Inside the training range that is harmless, because the longest
+        # example is 112 timesteps and the head runs off into memory it never wrote. Past 128 it
+        # laps the ring and erases the sequence it is still reading out, which is why
+        # generalisation collapsed on both axes.
+        #
+        # The copy task, which never had this bias, shows what the model learns instead when it
+        # is left alone: it raises the gate from 0.20 in the input phase to 0.44 in the output
+        # phase, and the write weighting goes diffuse (peak 0.41, against 0.95 here). A spread
+        # weighting makes the write harmless without the head ever having to stop. That is the
+        # behaviour the bias was preventing, so the bias is gone.
         "ntm-ff": dict(heads=1, controller_size=100, learning_rate=1e-4,
-                       initial_focus=True, gate_bias=-2.0),  # Table 1
+                       initial_focus=True),  # Table 1
         "ntm-lstm": dict(heads=1, controller_size=100, learning_rate=1e-4,
-                         initial_focus=True, gate_bias=-2.0),  # Table 2
+                         initial_focus=True),  # Table 2
         "lstm": dict(hidden_size=512, num_layers=3, learning_rate=3e-5),  # Table 3: 3 x 512 here
     },
 }

@@ -98,6 +98,9 @@ class NTM(nn.Module):
                 if trace is not None:
                     trace.setdefault("write_weightings", []).append(weightings[i][0].detach())
                     trace.setdefault("adds", []).append(added[0].detach())
+                    # the head's raw projection, which src/probe.py splits with head.sizes to
+                    # recover the gate and the erase vector without duplicating the head's layout
+                    trace.setdefault("write_parameters", []).append(parameters[i][0].detach())
 
             reads = []
             for j, head in enumerate(self.read_heads, start=len(self.write_heads)):
