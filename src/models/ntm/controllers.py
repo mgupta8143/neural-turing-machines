@@ -31,8 +31,15 @@ class LSTMController(nn.Module):
 
     def __init__(self, input_size, hidden_size, layers=1):
         super().__init__()
-        sizes = [input_size] + [hidden_size] * layers
-        self.cells = nn.ModuleList(nn.LSTMCell(sizes[i], sizes[i + 1]) for i in range(layers))
+        # Every layer sees the network input, not just the layer below it: that is the deep LSTM
+        # of Graves (2013), which Section 4.6 cites for the optimiser and whose architecture the
+        # paper follows. It is also what reconciles the parameter count - without the skip our
+        # two-layer priority sort controller is 19% under Table 2, and with it 2.6%, in line with
+        # every single-layer model. For one layer it changes nothing.
+        self.cells = nn.ModuleList(
+            nn.LSTMCell(input_size if i == 0 else hidden_size + input_size, hidden_size)
+            for i in range(layers)
+        )
         # The paper resets to a learned bias at the start of each sequence
         self.h0 = nn.Parameter(torch.zeros(layers, 1, hidden_size))
         self.c0 = nn.Parameter(torch.zeros(layers, 1, hidden_size))
@@ -44,9 +51,10 @@ class LSTMController(nn.Module):
     def forward(self, x, state):
         hs, cs = state
         new_hs, new_cs = [], []
-        for cell, h, c in zip(self.cells, hs, cs):
-            h, c = cell(x, (h, c))
+        below = x
+        for i, (cell, h, c) in enumerate(zip(self.cells, hs, cs)):
+            h, c = cell(below if i == 0 else torch.cat([below, x], dim=1), (h, c))
             new_hs.append(h)
             new_cs.append(c)
-            x = h  # each layer feeds the one above
-        return x, (new_hs, new_cs)
+            below = h
+        return below, (new_hs, new_cs)

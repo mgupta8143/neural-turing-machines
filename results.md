@@ -72,10 +72,12 @@ LSTM's failure mode, including the shrinking accurate prefix. The learned copy a
 in the memory traces.
 
 **Did not match.** The paper's LSTM-controller NTM converges fastest; ours is second (10k versus
-5k sequences). Parameter counts are 1 to 3% below the paper's for every model, which suggests a
-small structural difference we could not pin down - an attempt to match all ten published counts
-exactly failed, and found that Tables 1 and 2 disagree with each other on parity, so the
-published numbers are not fully self-consistent.
+5k sequences). Parameter counts run 2 to 6% below the paper's - the LSTM controller within 3%,
+the feed-forward one consistently 6% under on every task, a structural difference we could not
+pin down. An attempt to match all ten published counts exactly failed, and found that the
+published numbers are not self-consistent: Tables 1 and 2 disagree on parity, and Table 3 gives
+priority sort and N-grams the same 3x128 network but parameter counts 52,519 apart, which their
+channel counts cannot account for.
 
 ## Things the paper leaves out that decide whether this works
 
