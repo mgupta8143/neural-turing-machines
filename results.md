@@ -153,8 +153,8 @@ end-of-sequence marker is scored separately below.
 | | trained (L10 R10) | twice the length (L20 R10) | twice the repeats (L10 R20) | 1.5x both (L15 R15) |
 |---|---|---|---|---|
 | LSTM | 0.0% | 45.5% | 4.5% | 46.1% |
-| NTM, feed-forward | 0.0% | 38.8% | 49.1% | 48.1% |
-| NTM, LSTM controller | 0.0% | **20.7%** | **17.6%** | **24.5%** |
+| NTM, feed-forward | 0.1% | 40.2% | 48.8% | 44.1% |
+| NTM, LSTM controller | 0.0% | **20.6%** | **17.7%** | **24.5%** |
 
 ![NTM repeat-copy generalisation](figures/repeat-copy/ntm-lstm_generalisation.png)
 
