@@ -107,7 +107,7 @@ src/probe.py             diagnostics logged beside the cost
 src/plots.py             learning curves, shared by every task
 src/remote.py            training on a Modal GPU and fetching the results
 src/models/ntm/          memory and addressing, heads, controllers, the model
-src/models/lstm.py       the baseline, which is an nn.LSTM and a readout
+src/models/lstm/         the baseline, which is an nn.LSTM and a readout
 src/models/build.py      per-task architectures and learning rates
 src/tasks/<task>/        data.py makes the task, plots.py draws its figures
 ```

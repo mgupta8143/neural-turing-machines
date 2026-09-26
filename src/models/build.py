@@ -5,7 +5,7 @@ Each takes the task's channel counts, so the same three models fit any task in t
 
 import torch
 
-from src.models.lstm import LSTM
+from src.models.lstm.lstm import LSTM
 from src.models.ntm.ntm import NTM
 
 MODELS = ["lstm", "ntm-ff", "ntm-lstm"]
