@@ -12,13 +12,12 @@ import os
 import matplotlib.pyplot as plt
 
 from src.tasks.copy import plots as copy_plots
-from src.tasks.priority_sort import plots as priority_sort_plots
 
 # Task name -> the module drawing that task's own figures. A module may define
 # plot_generalisation(model_name, checkpoint_path, out_path) and
 # plot_memory_use(model_name, checkpoint_path, out_path, length); a task with neither still
 # trains and still gets its learning curves.
-TASK_PLOTS = {"copy": copy_plots, "priority-sort": priority_sort_plots}
+TASK_PLOTS = {"copy": copy_plots}
 
 
 def task_plot(task_name: str, figure: str):

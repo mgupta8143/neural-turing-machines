@@ -16,11 +16,9 @@ demo and the task's own figures use to pin an example to a chosen length.
 """
 
 from src.tasks.copy import data as copy_data
-from src.tasks.priority_sort import data as priority_sort_data
 
 TASKS = {
     "copy": copy_data,  # paper, Section 4.1
-    "priority-sort": priority_sort_data,  # paper, Section 4.5
 }
 
 
