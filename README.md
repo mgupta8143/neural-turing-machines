@@ -1,31 +1,83 @@
 # neural-turing-machines
 
-[Neural Turing Machines](https://arxiv.org/abs/1410.5401) (Graves, Wayne & Danihelka, 2014)
-reproduced from scratch in PyTorch: the NTM with a feed-forward and an LSTM controller, against
-the paper's LSTM baseline.
+A from-scratch PyTorch reproduction of [Neural Turing Machines](https://arxiv.org/abs/1410.5401)
+(Graves, Wayne & Danihelka, 2014). Three models: the NTM with a feed-forward controller, the NTM
+with an LSTM controller, and the plain LSTM the paper uses as a baseline.
 
-**[results.md](results.md) has the write-up**; the figures are in `figures/<task>/`.
+The write-up is in [results.md](results.md), and the figures are in `figures/copy/` and
+`figures/associative-recall/`.
 
-In short: on both tasks the NTMs reach zero cost while the LSTM baseline never does. On copy they
-then copy sequences six times longer than anything they trained on, at 0% bit error. On
-associative recall they beat the paper's own generalisation numbers at every point.
+## Getting started
 
-## Tasks
+You need [uv](https://docs.astral.sh/uv/) and nothing else.
 
-Two of the paper's five are implemented, chosen because they make the sharpest claims:
+```sh
+git clone https://github.com/mgupta8143/neural-turing-machines
+cd neural-turing-machines
+uv sync
+```
 
-- **copy** (Section 4.1) — read `L` 8-bit vectors, then emit them again. Trained on `L` ∈ 1..20.
-- **associative recall** (Section 4.3) — read 2 to 6 three-vector items, then one of them again
-  as a query; emit the item that followed it.
+Train the feed-forward NTM on the copy task and watch it learn:
 
-Adding another is a module with five names — `INPUT_SIZE`, `OUTPUT_SIZE`, `TIMESTEPS`, `batch()`
-and `PROBE_CASES` — registered in `src/tasks/registry.py`, plus a settings entry in
-`src/models/build.py`. Nothing else changes: the models, training loop, CUDA-graph path and
-learning-curve plots are all task-agnostic. `src/tasks/registry.py` documents the interface.
+```sh
+uv run main.py train --model ntm-ff --sequences 20000
+```
 
-## Models
+It starts around 84 bits, which is chance, and should be near zero inside ten thousand sequences.
+That takes a few minutes on a laptop. Then draw its figures:
 
-Parameter counts, ours against the paper's Tables 1–3:
+```sh
+uv run main.py plot --model ntm-ff
+uv run main.py memory --model ntm-ff --length 40
+```
+
+Everything else:
+
+```sh
+uv run main.py all                                  # train all three and keep the figures current
+uv run main.py compare                              # all three learning curves on one plot
+uv run main.py demo --model ntm-ff                  # one batch through an untrained model
+uv run pytest                                       # 29 checks
+```
+
+Every command takes `--task`. It defaults to copy; `--task associative-recall` runs the other one.
+
+## Running on a GPU
+
+Most of the results here were trained on rented A10Gs through [Modal](https://modal.com), which
+is a good fit for this: you pay by the second, the runs are short, and nothing has to be set up
+on your own machine beyond an account.
+
+```sh
+uv run --with modal modal run --detach src/remote.py::train --model ntm-ff --sequences 500000
+uv run --with modal modal run src/remote.py::fetch
+```
+
+Use `--detach` for anything long, or the job dies with the terminal that launched it. Training
+writes into a Modal volume as it goes, so `fetch` will pull down a run that is still in progress.
+
+Worth knowing before you rent anything: the NTM is slower on a GPU than on a CPU if you run it
+naively, because it launches a few hundred tiny kernels per sequence and spends all its time on
+launch overhead rather than arithmetic. We capture the whole training step as a CUDA graph, one
+per distinct sequence length, which is what makes the GPU worth paying for. The LSTM baseline has
+no such problem and is much faster on a GPU either way.
+
+## The tasks
+
+Two of the paper's five are implemented, the ones that make the sharpest claims.
+
+**Copy** (Section 4.1) reads `L` random 8-bit vectors and a delimiter, then has to emit the same
+vectors again. Training draws `L` from 1 to 20.
+
+**Associative recall** (Section 4.3) reads two to six items, each three six-bit vectors, then one
+of those items again as a query. It has to emit whichever item followed the query in the list.
+
+The rest of the code does not know which task it is running, so a third one is mostly a matter of
+writing its data module. `src/tasks/registry.py` says what that module has to provide.
+
+## Results in brief
+
+Parameter counts, ours against the paper's Tables 1 to 3:
 
 | | copy | paper | associative recall | paper |
 |---|---|---|---|---|
@@ -33,71 +85,57 @@ Parameter counts, ours against the paper's Tables 1–3:
 | `ntm-ff` | 16,096 | 17,162 | 123,046 | 146,845 |
 | `ntm-lstm` | 65,696 | 67,561 | 65,054 | 70,330 |
 
-We come out consistently under. The published counts are not reconstructible from the published
-architectures — `results.md` has the details, including where Table 2 contradicts itself.
+Ours come out consistently smaller, and we could not find a reading of the tables that closes the
+gap. The published numbers do not appear to be reconstructible from the published architectures,
+and in one place Table 2 contradicts itself. There is more on this in results.md.
 
-Training follows Section 4.6: RMSProp in the Graves (2013) form, momentum 0.9, one sequence per
-update, and the per-task learning rates from the tables.
+Training follows Section 4.6: RMSProp in the form Graves (2013) describes, momentum 0.9, one
+sequence per update, and the per-task learning rates from the tables.
 
-## Usage
+Each run writes to `results/<task>/<model>/`. Alongside the checkpoint and the cost log there is a
+`run.json` with the seed, learning rate, device, PyTorch version and git commit, so you can always
+work out which settings produced a given figure. Runs repeat exactly on the same machine and
+PyTorch build; on different hardware you get the same curve but not the same digits.
 
-Requires [uv](https://docs.astral.sh/uv/). Every command takes `--task`, defaulting to copy.
-
-```sh
-uv sync
-uv run pytest                                       # 29 checks, incl. addressing vs the paper
-
-uv run main.py all                                  # train all three, redrawing figures as it goes
-uv run main.py train --model ntm-ff                 # one model
-uv run main.py plot --model ntm-ff                  # learning curve and generalisation
-uv run main.py compare                              # all three curves on one plot
-uv run main.py memory --model ntm-ff --length 40    # what the heads read and wrote
-uv run main.py demo --model ntm-ff                  # one batch through an untrained model
-```
-
-On a rented A10G, which is worth it for the LSTM and for long NTM runs:
-
-```sh
-uv run --with modal modal run --detach src/remote.py::train --model ntm-ff --sequences 500000
-uv run --with modal modal run src/remote.py::fetch    # pull results mid-run
-```
-
-Results land in `results/<task>/<model>/`: `log.csv`, `diagnostics.csv`, the checkpoint, and a
-`run.json` recording seed, learning rate, device, PyTorch version and git commit, so any figure
-traces back to the settings that made it. Runs repeat exactly on the same machine and build;
-across architectures you reproduce the curve, not the digits.
-
-## Codebase
+## Code
 
 ```
 main.py                  the command line
 src/train.py             training loop, checkpoints, logging
-src/graphs.py            the whole step captured as one CUDA graph, per sequence length
-src/probe.py             diagnostics logged beside the cost: head behaviour, error out of range
+src/graphs.py            the training step captured as a CUDA graph
+src/probe.py             diagnostics logged beside the cost
 src/plots.py             learning curves, shared by every task
-src/remote.py            train on a Modal GPU, fetch the results
-src/models/ntm/          memory and addressing, heads, controllers, and the model itself
-src/models/lstm.py       the baseline: an nn.LSTM and a readout
-src/models/build.py      per-task architectures and learning rates, from Tables 1-3
-src/tasks/<task>/        data.py generates the task, plots.py draws its paper figures
+src/remote.py            training on a Modal GPU and fetching the results
+src/models/ntm/          memory and addressing, heads, controllers, the model
+src/models/lstm.py       the baseline, which is an nn.LSTM and a readout
+src/models/build.py      per-task architectures and learning rates
+src/tasks/<task>/        data.py makes the task, plots.py draws its figures
 ```
 
-`src/models/ntm/memory.py` is the interesting file: read, write, and the four addressing stages
-of the paper's Figure 2, each as its own function, tested against the equations.
+If you only read one file, read `src/models/ntm/memory.py`. Reading, writing and the four
+addressing stages of the paper's Figure 2 are each a separate function there, and the tests check
+them against the equations.
 
-## What the paper leaves out
+## Things the paper does not tell you
 
-Four details decide whether this trains at all:
+These four decide whether it trains at all, and none of them is in the paper.
 
-- **RMSProp as Graves (2013) defines it** — centered, decay 0.95, damping 1e-4. PyTorch's
-  defaults instead make the LSTM-controller NTM converge and then drift back off zero.
-- **Clip the gradient norm, not each component.** NTM gradient norms spike to hundreds of times
-  their median, and the paper's elementwise clipping turns such a spike into an update that
-  destroys the learned addressing.
-- **The starting memory must break symmetry.** With identical rows every location has identical
-  gradients and the 128 locations never differentiate.
-- **Sharpening underflows if written literally.** Equation 9 raises the weighting to a power;
-  `softmax(gamma * log w)` is the same expression and survives float32.
+Section 4.6 says RMSProp "in the form described in (Graves, 2013)", which means centered, decay
+0.95, and a damping term of 1e-4. If you use PyTorch's defaults instead, the LSTM-controller NTM
+reaches zero cost and then drifts back off it later in the run.
 
-And one that decides whether it trains *quickly*: the range of training lengths. Copy converges in
-7,500 sequences on lengths 1–20 and does not converge at all on 1–10, across three seeds.
+The paper clips each gradient component to (-10, 10). NTM gradient norms spike to hundreds of
+times their median, and clipping componentwise turns one of those spikes into an update large
+enough to destroy the addressing the model has learned. Clip the norm instead.
+
+The starting memory has to break symmetry. If every location holds the same values, every location
+gets the same gradient, and the 128 locations never differentiate.
+
+Equation 9 sharpens the weighting by raising it to a power. Written literally, small weights
+underflow float32 to zero and the head ends up attending to nothing. `softmax(gamma * log w)` is
+the same expression and does not underflow.
+
+There is also one that decides how fast it trains rather than whether it trains, and it surprised
+us: the range of sequence lengths you train on. Copy converges in about 7,500 sequences when
+lengths are drawn from 1 to 20, and does not converge at all when they are drawn from 1 to 10.
+That held across three seeds.
