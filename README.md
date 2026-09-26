@@ -101,8 +101,7 @@ PyTorch build; on different hardware you get the same curve but not the same dig
 
 ```
 main.py                  the command line
-src/train.py             training loop, checkpoints, logging
-src/graphs.py            the training step captured as a CUDA graph
+src/train.py             training loop, CUDA-graph capture, checkpoints, logging
 src/probe.py             diagnostics logged beside the cost
 src/plots.py             learning curves, shared by every task
 src/remote.py            training on a Modal GPU and fetching the results
