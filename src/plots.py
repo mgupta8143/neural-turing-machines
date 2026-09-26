@@ -90,6 +90,7 @@ def plot_all_learning_curves(log_paths: dict, out_path: str, chunk: int = 10_000
     """
     fig, (full, paper) = plt.subplots(1, 2, figsize=(12, 4.5))
     longest = max((planned_sequences(p) for p in log_paths.values()), default=0) / 1000 or 1
+    stopped = []
 
     for model, log_path in log_paths.items():
         if not os.path.exists(log_path):
@@ -100,8 +101,16 @@ def plot_all_learning_curves(log_paths: dict, out_path: str, chunk: int = 10_000
         longest = max(longest, thousands[-1])
 
         label, colour, marker = PAPER_STYLE[model]
+        planned = planned_sequences(log_path) / 1000
         for ax in (full, paper):
             ax.plot(thousands, cost, marker=marker, color=colour, markersize=3.5, linewidth=1, label=label)
+            # A run stopped once it had clearly converged is continued to the length it was asked
+            # for, dashed, so it can be read against the runs that finished. Dashed because it is
+            # drawn rather than measured: the last value held flat, it was not observed to.
+            if planned - thousands[-1] > 0.05 * planned:
+                ax.plot([thousands[-1], planned], [cost[-1], cost[-1]],
+                        color=colour, linewidth=1, linestyle=(0, (4, 3)))
+                stopped.append(f"{label} stopped at {thousands[-1]:,.0f}k")
 
     for ax in (full, paper):
         # The paper's Figure 3 runs to 1000k because that is how long it trained; ours ends where
@@ -110,6 +119,9 @@ def plot_all_learning_curves(log_paths: dict, out_path: str, chunk: int = 10_000
         ax.set_xlabel("sequence number (thousands)")
         ax.set_ylabel("cost per sequence (bits)")
         ax.legend(frameon=False, fontsize=9)
+    if stopped:
+        fig.text(0.5, 0.005, "dashed: " + "; ".join(sorted(set(stopped))) + ", held flat thereafter",
+                 ha="center", fontsize=8, color="0.4")
     full.set_ylim(bottom=0)
     full.set_title("Whole run")
     paper.set_ylim(0, 10)
