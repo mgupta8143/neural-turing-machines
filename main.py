@@ -3,8 +3,6 @@
     uv run main.py demo                        run one batch through an untrained model
     uv run main.py train --model ntm-ff        train (also: lstm, ntm-lstm)
     uv run main.py plot --model ntm-ff         draw Figures 3 and 5 into figures/
-    uv run main.py try 10110010 01100101 ...   copy your own 8-bit vectors
-    uv run main.py try --random 30             or a random sequence of that length
     uv run main.py memory --model ntm-ff       the paper's Figure 6: what the heads read and wrote
     uv run main.py compare                     all three learning curves on one plot (Figure 3)
     uv run main.py all                         train all three and keep every figure up to date
@@ -22,8 +20,7 @@ import time
 import torch
 
 from src.models.build import MODELS, build_model
-from src.plots import plot_all_learning_curves, plot_learning_curve, plot_memory_use, task_plot
-from src.tasks.copy.try_it import parse_vectors, try_sequence
+from src.plots import plot_all_learning_curves, plot_learning_curve, task_plot
 from src.tasks.registry import TASKS, get_task
 from src.train import TrainConfig, train
 
@@ -66,12 +63,9 @@ def draw_every_figure(task_name):
         plot_learning_curve(config.log_path, f"{prefix}_learning_curve.png", label=model)
         if generalisation:
             generalisation(model, config.checkpoint_path, f"{prefix}_generalisation.png")
-        if model.startswith("ntm"):
-            if memory_use:  # copy pins the sequence length so the diagonal matches the paper
-                for length in (20, 40):
-                    memory_use(model, config.checkpoint_path, f"{prefix}_memory_length{length}.png", length)
-            else:  # every other task gets the generic version on one of its own examples
-                plot_memory_use(task_name, model, config.checkpoint_path, f"{prefix}_memory.png")
+        if model.startswith("ntm") and memory_use:
+            for length in (20, 40):
+                memory_use(model, config.checkpoint_path, f"{prefix}_memory_length{length}.png", length)
     logs = {model: TrainConfig(model=model, task=task_name).log_path for model in MODELS}
     plot_all_learning_curves(logs, f"{figure_dir(task_name)}/learning_curves.png")
 
@@ -111,7 +105,7 @@ def train_all(task_name, sequences, batch_size, refresh, seed=TrainConfig.seed):
 def main():
     parser = argparse.ArgumentParser(description="NTM and LSTM on the paper's tasks")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ["demo", "train", "plot", "try", "memory", "compare", "all"]:
+    for name in ["demo", "train", "plot", "memory", "compare", "all"]:
         command = commands.add_parser(name)
         command.add_argument("--model", choices=list(MODELS), default="lstm")
         command.add_argument("--task", choices=list(TASKS), default="copy")
@@ -122,8 +116,6 @@ def main():
     commands.choices["train"].add_argument("--device", choices=["cpu", "cuda"], default="")
     commands.choices["train"].add_argument("--compile", action="store_true", help="torch.compile: faster per step after a slow warmup")
     commands.choices["train"].add_argument("--threads", type=int, default=TrainConfig.threads)
-    commands.choices["try"].add_argument("vectors", nargs="*", help="8-bit vectors like 10110010")
-    commands.choices["try"].add_argument("--random", type=int, help="use a random sequence of this length")
     commands.choices["memory"].add_argument("--length", type=int, default=20, help="sequence length to trace")
     commands.choices["all"].add_argument("--sequences", type=int, default=TrainConfig.total_sequences)
     commands.choices["all"].add_argument("--batch-size", type=int, default=TrainConfig.batch_size)
@@ -178,24 +170,11 @@ def main():
         if not args.model.startswith("ntm"):
             raise SystemExit("memory plots need an NTM: --model ntm-ff or ntm-lstm")
         memory_use = task_plot(args.task, "plot_memory_use")
-        if memory_use:  # copy pins the sequence length so the diagonal matches the paper's figure
-            out = f"{prefix}_memory_length{args.length}.png"
-            memory_use(args.model, config.checkpoint_path, out, args.length)
-        else:
-            out = f"{prefix}_memory.png"
-            plot_memory_use(args.task, args.model, config.checkpoint_path, out)
+        if not memory_use:
+            raise SystemExit(f"{args.task} has no memory figure")
+        out = f"{prefix}_memory_length{args.length}.png"
+        memory_use(args.model, config.checkpoint_path, out, args.length)
         print(f"saved {out}")
-    elif args.command == "try":
-        if args.task != "copy":
-            raise SystemExit("`try` is the copy task's own command: use --task copy")
-        if args.random:
-            target = torch.randint(0, 2, (1, args.random, 8)).float()
-        elif args.vectors:
-            target = parse_vectors(args.vectors)
-        else:
-            raise SystemExit("Give some 8-bit vectors (e.g. 10110010 01100101) or --random LENGTH")
-        try_sequence(args.model, config.checkpoint_path, target, f"{prefix}_try.png")
-        print(f"saved {prefix}_try.png")
 
 
 if __name__ == "__main__":

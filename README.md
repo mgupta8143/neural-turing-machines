@@ -42,8 +42,9 @@ uv run main.py train --model ntm-ff                # one model on its own
 uv run main.py plot --model ntm-ff                 # learning curve and generalisation
 uv run main.py compare                             # all three curves on one plot
 uv run main.py memory --model ntm-ff --length 40   # write and read weightings over time
-uv run main.py try --model ntm-ff 10110010 01100101
 ```
+
+Every command takes `--task`, which defaults to copy: `--task associative-recall` runs the other one.
 
 On a GPU each training step replays as a single CUDA graph, one captured per sequence length,
 which is what makes a GPU worth using here: eager, the NTM launches a few hundred tiny kernels per

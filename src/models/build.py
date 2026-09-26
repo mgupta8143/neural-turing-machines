@@ -54,17 +54,6 @@ def build_model(name, input_size, output_size, task_name="copy"):
 def load_model(name, checkpoint_path, task, task_name="copy"):
     """The trained model, ready for the plots: same shape as the run that saved it."""
     model = build_model(name, task.INPUT_SIZE, task.OUTPUT_SIZE, task_name)
-    state = torch.load(checkpoint_path, map_location="cpu")
-
-    # Checkpoints saved before the controller could stack layers hold (1, hidden) starting states
-    # where it now expects (layers, 1, hidden). Reshape them rather than lose the run.
-    for key in ("controller.h0", "controller.c0"):
-        if key in state and state[key].dim() == 2:
-            state[key] = state[key].unsqueeze(0)
-    for key in list(state):
-        if key.startswith("controller.cell."):
-            state[key.replace("controller.cell.", "controller.cells.0.")] = state.pop(key)
-
-    model.load_state_dict(state)
+    model.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
     model.eval()
     return model
