@@ -116,7 +116,7 @@ uv run main.py plot --model ntm-ff
 uv run main.py memory --model ntm-ff --length 40
 ```
 
-About 70 minutes per NTM on an A10G, or four hours on a laptop CPU; `modal_run.py` runs it on a
+About 70 minutes per NTM on an A10G, or four hours on a laptop CPU; `src/remote.py` runs it on a
 rented GPU and downloads the results.
 
 ---

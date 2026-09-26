@@ -55,10 +55,11 @@ sequence and runs several times slower on a GPU than on a laptop CPU. Measured a
 | `ntm-ff` | 11.3 ms/seq | 81 ms/seq | 7.8 ms/seq |
 | `lstm` | 18.2 ms/seq | 3.3 ms/seq | 1.0 ms/seq |
 
-`modal_run.py` trains on a rented A10G and downloads the results:
+`src/remote.py` trains on a rented A10G and downloads the results:
 
 ```sh
-uv run --with modal modal run modal_run.py --model lstm
+uv run --with modal modal run src/remote.py::train --model lstm
+uv run --with modal modal run src/remote.py::fetch   # pull a run still in progress
 ```
 
 Training writes to `results/copy/<model>/`, figures to `figures/`. The NTMs train on the CPU by
